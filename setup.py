@@ -209,7 +209,7 @@ def setup_package():
     setup(
         name="spacy-nightly",
         packages=PACKAGES,
-        version=about["__version__"],
+        version="3.0",
         ext_modules=ext_modules,
         cmdclass={"build_ext": build_ext_subclass},
         include_dirs=include_dirs,
