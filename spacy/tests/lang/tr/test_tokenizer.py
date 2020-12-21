@@ -1,6 +1,3 @@
-# coding: utf-8
-from __future__ import unicode_literals
-
 import pytest
 
 
@@ -143,15 +140,6 @@ GENERAL_TESTS = [
 
 
 TESTS = (ABBREV_TESTS + URL_TESTS +  NUMBER_TESTS + PUNCT_TESTS + GENERAL_TESTS)
-
-
-
-def test_tr_tokenizer_exc_lemma_in_text(tr_tokenizer):
-    text = "Dr. Murat Bey ile görüştüm."
-    tokens = tr_tokenizer(text)
-    assert len(tokens) == 6
-    assert tokens[0].text == "Dr."
-    assert tokens[0].lemma_ == "doktor"
 
 
 

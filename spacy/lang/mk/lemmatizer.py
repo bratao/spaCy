@@ -1,20 +1,15 @@
-# coding: utf8
-from __future__ import unicode_literals
-
+from typing import List
 from collections import OrderedDict
 
-from ...lemmatizer import Lemmatizer
-from ...parts_of_speech import NAMES as UPOS_NAMES
+from ...pipeline import Lemmatizer
+from ...tokens import Token
 
 
 class MacedonianLemmatizer(Lemmatizer):
-    def __call__(self, string, univ_pos, morphology=None):
-        lookup_table = self.lookups.get_table("lemma_lookup", {})
-        if "lemma_rules" not in self.lookups:
-            return [lookup_table.get(string, string)]
-        if isinstance(univ_pos, int):
-            univ_pos = UPOS_NAMES.get(univ_pos, "X")
-        univ_pos = univ_pos.lower()
+    def rule_lemmatize(self, token: Token) -> List[str]:
+        string = token.text
+        univ_pos = token.pos_.lower()
+        morphology = token.morph.to_dict()
 
         if univ_pos in ("", "eol", "space"):
             return [string.lower()]
@@ -33,15 +28,11 @@ class MacedonianLemmatizer(Lemmatizer):
                 return [string]
             else:
                 return [string.lower()]
-        lemmas = self.lemmatize(
-            string,
-            index_table.get(univ_pos, {}),
-            exc_table.get(univ_pos, {}),
-            rules_table.get(univ_pos, []),
-        )
-        return lemmas
 
-    def lemmatize(self, string, index, exceptions, rules):
+        index = index_table.get(univ_pos, {})
+        exceptions = exc_table.get(univ_pos, {})
+        rules = rules_table.get(univ_pos, [])
+
         orig = string
         string = string.lower()
         forms = []
