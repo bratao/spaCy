@@ -1,4 +1,5 @@
 # cython: infer_types=True, profile=True, binding=True
+from collections import defaultdict
 from typing import Optional, Iterable
 from thinc.api import Model, Config
 
@@ -8,17 +9,19 @@ from ._parser_internals.arc_eager cimport ArcEager
 from .functions import merge_subtokens
 from ..language import Language
 from ._parser_internals import nonproj
+from ._parser_internals.nonproj import DELIMITER
 from ..scorer import Scorer
 from ..training import validate_examples
 
 
 default_model_config = """
 [model]
-@architectures = "spacy.TransitionBasedParser.v1"
+@architectures = "spacy.TransitionBasedParser.v2"
 state_type = "parser"
 extra_state_tokens = false
 hidden_width = 64
 maxout_pieces = 2
+use_upper = true
 
 [model.tok2vec]
 @architectures = "spacy.HashEmbedCNN.v1"
@@ -228,8 +231,8 @@ cdef class DependencyParser(Parser):
         for move in self.move_names:
             if "-" in move:
                 label = move.split("-")[1]
-                if "||" in label:
-                    label = label.split("||")[1]
+                if DELIMITER in label:
+                    label = label.split(DELIMITER)[1]
                 labels.add(label)
         return tuple(sorted(labels))
 
@@ -257,3 +260,20 @@ cdef class DependencyParser(Parser):
         results.update(Scorer.score_deps(examples, "dep", **kwargs))
         del results["sents_per_type"]
         return results
+
+    def scored_parses(self, beams):
+        """Return two dictionaries with scores for each beam/doc that was processed:
+        one containing (i, head) keys, and another containing (i, label) keys.
+        """
+        head_scores = []
+        label_scores = []
+        for beam in beams:
+            score_head_dict = defaultdict(float)
+            score_label_dict = defaultdict(float)
+            for score, parses in self.moves.get_beam_parses(beam):
+                for head, i, label in parses:
+                    score_head_dict[(i, head)] += score
+                    score_label_dict[(i, label)] += score
+            head_scores.append(score_head_dict)
+            label_scores.append(score_label_dict)
+        return head_scores, label_scores

@@ -123,6 +123,8 @@ class Warnings:
             "token '{text}'. Check that your pipeline includes components that "
             "assign token.pos, typically 'tagger'+'attribute_ruler' or "
             "'morphologizer'.")
+    W109 = ("Unable to save user hooks while serializing the doc. Re-add any "
+            "required user hooks to the doc after processing.")
 
 
 @add_codes
@@ -461,6 +463,18 @@ class Errors:
             "issue tracker: http://github.com/explosion/spaCy/issues")
 
     # TODO: fix numbering after merging develop into master
+    E892 = ("Unknown function registry: '{name}'.\n\nAvailable names: {available}")
+    E893 = ("Could not find function '{name}' in function registry '{reg_name}'. "
+            "If you're using a custom function, make sure the code is available. "
+            "If the function is provided by a third-party package, e.g. "
+            "spacy-transformers, make sure the package is installed in your "
+            "environment.\n\nAvailable names: {available}")
+    E894 = ("The 'noun_chunks' syntax iterator is not implemented for language "
+            "'{lang}'.")
+    E895 = ("The 'textcat' component received gold-standard annotations with "
+            "multiple labels per document. In spaCy 3 you should use the "
+            "'textcat_multilabel' component for this instead. "
+            "Example of an offending annotation: {value}")
     E896 = ("There was an error using the static vectors. Ensure that the vectors "
             "of the vocab are properly initialized, or set 'include_static_vectors' "
             "to False.")
@@ -724,6 +738,8 @@ class Errors:
              "DocBin (.spacy) format. If your data is in spaCy v2's JSON "
              "training format, convert it using `python -m spacy convert "
              "file.json .`.")
+    E1015 = ("Can't initialize model from config: no {value} found. For more "
+             "information, run: python -m spacy debug config config.cfg")
 
 
 # Deprecated model shortcuts, only used in errors and warnings

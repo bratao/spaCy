@@ -697,6 +697,8 @@ class Language:
         source_config = source.config.interpolate()
         pipe_config = util.copy_config(source_config["components"][source_name])
         self._pipe_configs[name] = pipe_config
+        for s in source.vocab.strings:
+            self.vocab.strings.add(s)
         return pipe, pipe_config["factory"]
 
     def add_pipe(
@@ -1049,7 +1051,6 @@ class Language:
                 Errors.E088.format(length=len(text), max_length=self.max_length)
             )
         return self.tokenizer(text)
-        return self.tokenizer(text)
 
     def update(
         self,
@@ -1083,6 +1084,7 @@ class Language:
         if len(examples) == 0:
             return losses
         validate_examples(examples, "Language.update")
+        examples = _copy_examples(examples)
         if sgd is None:
             if self._optimizer is None:
                 self._optimizer = self.create_optimizer()
@@ -1092,7 +1094,6 @@ class Language:
         for i, (name, proc) in enumerate(self.pipeline):
             component_cfg.setdefault(name, {})
             component_cfg[name].setdefault("drop", drop)
-            component_cfg[name].setdefault("set_annotations", False)
         for name, proc in self.pipeline:
             if name in exclude or not hasattr(proc, "update"):
                 continue
@@ -1209,6 +1210,9 @@ class Language:
         config = self.config.interpolate()
         # These are the settings provided in the [initialize] block in the config
         I = registry.resolve(config["initialize"], schema=ConfigSchemaInit)
+        before_init = I["before_init"]
+        if before_init is not None:
+            before_init(self)
         init_vocab(
             self, data=I["vocab_data"], lookups=I["lookups"], vectors=I["vectors"]
         )
@@ -1240,6 +1244,9 @@ class Language:
             self._optimizer = sgd
         elif self._optimizer is None:
             self._optimizer = self.create_optimizer()
+        after_init = I["after_init"]
+        if after_init is not None:
+            after_init(self)
         return self._optimizer
 
     def resume_training(self, *, sgd: Optional[Optimizer] = None) -> Optimizer:
@@ -1290,7 +1297,9 @@ class Language:
 
         DOCS: https://nightly.spacy.io/api/language#evaluate
         """
+        examples = list(examples)
         validate_examples(examples, "Language.evaluate")
+        examples = _copy_examples(examples)
         if batch_size is None:
             batch_size = self.batch_size
         if component_cfg is None:
@@ -1301,27 +1310,19 @@ class Language:
             kwargs = dict(scorer_cfg)
             kwargs.setdefault("nlp", self)
             scorer = Scorer(**kwargs)
-        texts = [eg.reference.text for eg in examples]
-        docs = [eg.predicted for eg in examples]
+        # reset annotation in predicted docs and time tokenization
         start_time = timer()
-        # tokenize the texts only for timing purposes
-        if not hasattr(self.tokenizer, "pipe"):
-            _ = [self.tokenizer(text) for text in texts]  # noqa: F841
-        else:
-            _ = list(self.tokenizer.pipe(texts))  # noqa: F841
+        # apply all pipeline components
         for name, pipe in self.pipeline:
             kwargs = component_cfg.get(name, {})
             kwargs.setdefault("batch_size", batch_size)
-            docs = _pipe(docs, pipe, kwargs)
-        # iterate over the final generator
-        if len(self.pipeline):
-            docs = list(docs)
+            for doc, eg in zip(
+                _pipe((eg.predicted for eg in examples), pipe, kwargs), examples
+            ):
+                eg.predicted = doc
         end_time = timer()
-        for i, (doc, eg) in enumerate(zip(docs, examples)):
-            util.logger.debug(doc)
-            eg.predicted = doc
         results = scorer.score(examples)
-        n_words = sum(len(doc) for doc in docs)
+        n_words = sum(len(eg.predicted) for eg in examples)
         results["speed"] = n_words / (end_time - start_time)
         return results
 
@@ -1495,8 +1496,7 @@ class Language:
         for i, (name1, proc1) in enumerate(self.pipeline):
             if hasattr(proc1, "find_listeners"):
                 for name2, proc2 in self.pipeline[i + 1 :]:
-                    if isinstance(getattr(proc2, "model", None), Model):
-                        proc1.find_listeners(proc2.model)
+                    proc1.find_listeners(proc2)
 
     @classmethod
     def from_config(
@@ -1618,9 +1618,7 @@ class Language:
                     if model not in source_nlps:
                         # We only need the components here and we need to init
                         # model with the same vocab as the current nlp object
-                        source_nlps[model] = util.load_model(
-                            model, vocab=nlp.vocab, disable=["vocab", "tokenizer"]
-                        )
+                        source_nlps[model] = util.load_model(model, vocab=nlp.vocab)
                     source_name = pipe_cfg.get("component", pipe_name)
                     nlp.add_pipe(source_name, source=source_nlps[model], name=pipe_name)
         disabled_pipes = [*config["nlp"]["disabled"], *disable]
@@ -1819,6 +1817,15 @@ class DisabledPipes(list):
                 raise ValueError(Errors.E008.format(name=name))
             self.nlp.enable_pipe(name)
         self[:] = []
+
+
+def _copy_examples(examples: Iterable[Example]) -> List[Example]:
+    """Make a copy of a batch of examples, copying the predicted Doc as well.
+    This is used in contexts where we need to take ownership of the examples
+    so that they can be mutated, for instance during Language.evaluate and 
+    Language.update.
+    """
+    return [Example(eg.x.copy(), eg.y) for eg in examples]
 
 
 def _apply_pipes(
