@@ -211,7 +211,7 @@ def setup_package():
     setup(
         name="spacy",
         packages=PACKAGES,
-        version="2.3.5",
+        version="2.3.6",
         ext_modules=ext_modules,
         cmdclass={"build_ext": build_ext_subclass},
         include_dirs=include_dirs,
