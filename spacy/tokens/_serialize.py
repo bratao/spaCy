@@ -33,6 +33,7 @@ class DocBin:
     {
         "attrs": List[uint64], # e.g. [TAG, HEAD, ENT_IOB, ENT_TYPE]
         "tokens": bytes, # Serialized numpy uint64 array with the token data
+        "spans": List[Dict[str, bytes]], # SpanGroups data for each doc
         "spaces": bytes, # Serialized numpy boolean array with spaces data
         "lengths": bytes, # Serialized numpy int32 array with the doc lengths
         "strings": List[unicode] # List of unique strings in the token data
@@ -61,7 +62,7 @@ class DocBin:
         store_user_data (bool): Whether to write the `Doc.user_data` to bytes/file.
         docs (Iterable[Doc]): Docs to add.
 
-        DOCS: https://nightly.spacy.io/api/docbin#init
+        DOCS: https://spacy.io/api/docbin#init
         """
         attrs = sorted([intify_attr(attr) for attr in attrs])
         self.version = "0.1"
@@ -70,6 +71,7 @@ class DocBin:
         self.tokens = []
         self.spaces = []
         self.cats = []
+        self.span_groups = []
         self.user_data = []
         self.flags = []
         self.strings = set()
@@ -86,7 +88,7 @@ class DocBin:
 
         doc (Doc): The Doc object to add.
 
-        DOCS: https://nightly.spacy.io/api/docbin#add
+        DOCS: https://spacy.io/api/docbin#add
         """
         array = doc.to_array(self.attrs)
         if len(array.shape) == 1:
@@ -107,6 +109,10 @@ class DocBin:
             self.strings.add(token.ent_kb_id_)
         self.cats.append(doc.cats)
         self.user_data.append(srsly.msgpack_dumps(doc.user_data))
+        self.span_groups.append(doc.spans.to_bytes())
+        for key, group in doc.spans.items():
+            for span in group:
+                self.strings.add(span.label_)
 
     def get_docs(self, vocab: Vocab) -> Iterator[Doc]:
         """Recover Doc objects from the annotations, using the given vocab.
@@ -116,7 +122,7 @@ class DocBin:
         vocab (Vocab): The shared vocab.
         YIELDS (Doc): The Doc objects.
 
-        DOCS: https://nightly.spacy.io/api/docbin#get_docs
+        DOCS: https://spacy.io/api/docbin#get_docs
         """
         for string in self.strings:
             vocab[string]
@@ -130,6 +136,10 @@ class DocBin:
             doc = Doc(vocab, words=tokens[:, orth_col], spaces=spaces)
             doc = doc.from_array(self.attrs, tokens)
             doc.cats = self.cats[i]
+            if self.span_groups[i]:
+                doc.spans.from_bytes(self.span_groups[i])
+            else:
+                doc.spans.clear()
             if i < len(self.user_data) and self.user_data[i] is not None:
                 user_data = srsly.msgpack_loads(self.user_data[i], use_list=False)
                 doc.user_data.update(user_data)
@@ -143,7 +153,7 @@ class DocBin:
 
         other (DocBin): The DocBin to merge into the current bin.
 
-        DOCS: https://nightly.spacy.io/api/docbin#merge
+        DOCS: https://spacy.io/api/docbin#merge
         """
         if self.attrs != other.attrs:
             raise ValueError(
@@ -161,6 +171,7 @@ class DocBin:
         self.spaces.extend(other.spaces)
         self.strings.update(other.strings)
         self.cats.extend(other.cats)
+        self.span_groups.extend(other.span_groups)
         self.flags.extend(other.flags)
         self.user_data.extend(other.user_data)
 
@@ -169,7 +180,7 @@ class DocBin:
 
         RETURNS (bytes): The serialized DocBin.
 
-        DOCS: https://nightly.spacy.io/api/docbin#to_bytes
+        DOCS: https://spacy.io/api/docbin#to_bytes
         """
         for tokens in self.tokens:
             assert len(tokens.shape) == 2, tokens.shape  # this should never happen
@@ -185,6 +196,7 @@ class DocBin:
             "strings": list(sorted(self.strings)),
             "cats": self.cats,
             "flags": self.flags,
+            "span_groups": self.span_groups,
         }
         if self.store_user_data:
             msg["user_data"] = self.user_data
@@ -196,7 +208,7 @@ class DocBin:
         bytes_data (bytes): The data to load from.
         RETURNS (DocBin): The loaded DocBin.
 
-        DOCS: https://nightly.spacy.io/api/docbin#from_bytes
+        DOCS: https://spacy.io/api/docbin#from_bytes
         """
         try:
             msg = srsly.msgpack_loads(zlib.decompress(bytes_data))
@@ -213,6 +225,7 @@ class DocBin:
         self.tokens = NumpyOps().unflatten(flat_tokens, lengths)
         self.spaces = NumpyOps().unflatten(flat_spaces, lengths)
         self.cats = msg["cats"]
+        self.span_groups = msg.get("span_groups", [b"" for _ in lengths])
         self.flags = msg.get("flags", [{} for _ in lengths])
         if "user_data" in msg:
             self.user_data = list(msg["user_data"])
@@ -227,7 +240,7 @@ class DocBin:
 
         path (str / Path): The file path.
 
-        DOCS: https://nightly.spacy.io/api/docbin#to_disk
+        DOCS: https://spacy.io/api/docbin#to_disk
         """
         path = ensure_path(path)
         with path.open("wb") as file_:
@@ -239,7 +252,7 @@ class DocBin:
         path (str / Path): The file path.
         RETURNS (DocBin): The loaded DocBin.
 
-        DOCS: https://nightly.spacy.io/api/docbin#to_disk
+        DOCS: https://spacy.io/api/docbin#to_disk
         """
         path = ensure_path(path)
         with path.open("rb") as file_:

@@ -36,7 +36,7 @@ def evaluate_cli(
     dependency parses in a HTML file, set as output directory as the
     displacy_path argument.
 
-    DOCS: https://nightly.spacy.io/api/cli#evaluate
+    DOCS: https://spacy.io/api/cli#evaluate
     """
     import_code(code_path)
     evaluate(
@@ -172,11 +172,16 @@ def render_parses(
             file_.write(html)
 
 
-def print_prf_per_type(msg: Printer, scores: Dict[str, Dict[str, float]], name: str, type: str) -> None:
-    data = [
-        (k, f"{v['p']*100:.2f}", f"{v['r']*100:.2f}", f"{v['f']*100:.2f}")
-        for k, v in scores.items()
-    ]
+def print_prf_per_type(
+    msg: Printer, scores: Dict[str, Dict[str, float]], name: str, type: str
+) -> None:
+    data = []
+    for key, value in scores.items():
+        row = [key]
+        for k in ("p", "r", "f"):
+            v = value[k]
+            row.append(f"{v * 100:.2f}" if isinstance(v, (int, float)) else v)
+        data.append(row)
     msg.table(
         data,
         header=("", "P", "R", "F"),
@@ -189,7 +194,10 @@ def print_textcats_auc_per_cat(
     msg: Printer, scores: Dict[str, Dict[str, float]]
 ) -> None:
     msg.table(
-        [(k, f"{v:.2f}") for k, v in scores.items()],
+        [
+            (k, f"{v:.2f}" if isinstance(v, (float, int)) else v)
+            for k, v in scores.items()
+        ],
         header=("", "ROC AUC"),
         aligns=("l", "r"),
         title="Textcat ROC AUC (per label)",

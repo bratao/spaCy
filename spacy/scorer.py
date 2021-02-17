@@ -3,7 +3,7 @@ import numpy as np
 from collections import defaultdict
 
 from .training import Example
-from .tokens import Token, Doc, Span, MorphAnalysis
+from .tokens import Token, Doc, Span
 from .errors import Errors
 from .util import get_lang_class, SimpleFrozenList
 from .morphology import Morphology
@@ -103,7 +103,7 @@ class Scorer:
     ) -> None:
         """Initialize the Scorer.
 
-        DOCS: https://nightly.spacy.io/api/scorer#init
+        DOCS: https://spacy.io/api/scorer#init
         """
         self.nlp = nlp
         self.cfg = cfg
@@ -119,7 +119,7 @@ class Scorer:
         examples (Iterable[Example]): The predicted annotations + correct annotations.
         RETURNS (Dict): A dictionary of scores.
 
-        DOCS: https://nightly.spacy.io/api/scorer#score
+        DOCS: https://spacy.io/api/scorer#score
         """
         scores = {}
         if hasattr(self.nlp.tokenizer, "score"):
@@ -139,7 +139,7 @@ class Scorer:
         RETURNS (Dict[str, Any]): A dictionary containing the scores
             token_acc/p/r/f.
 
-        DOCS: https://nightly.spacy.io/api/scorer#score_tokenization
+        DOCS: https://spacy.io/api/scorer#score_tokenization
         """
         acc_score = PRFScore()
         prf_score = PRFScore()
@@ -176,7 +176,7 @@ class Scorer:
                 "token_acc": None,
                 "token_p": None,
                 "token_r": None,
-                "token_f": None
+                "token_f": None,
             }
 
     @staticmethod
@@ -198,7 +198,7 @@ class Scorer:
         RETURNS (Dict[str, Any]): A dictionary containing the accuracy score
             under the key attr_acc.
 
-        DOCS: https://nightly.spacy.io/api/scorer#score_token_attr
+        DOCS: https://spacy.io/api/scorer#score_token_attr
         """
         tag_score = PRFScore()
         for example in examples:
@@ -276,7 +276,10 @@ class Scorer:
                     if gold_i not in missing_indices:
                         value = getter(token, attr)
                         morph = gold_doc.vocab.strings[value]
-                        if value not in missing_values and morph != Morphology.EMPTY_MORPH:
+                        if (
+                            value not in missing_values
+                            and morph != Morphology.EMPTY_MORPH
+                        ):
                             for feat in morph.split(Morphology.FEATURE_SEP):
                                 field, values = feat.split(Morphology.FIELD_SEP)
                                 if field not in per_feat:
@@ -314,7 +317,7 @@ class Scorer:
         RETURNS (Dict[str, Any]): A dictionary containing the PRF scores under
             the keys attr_p/r/f and the per-type PRF scores under attr_per_type.
 
-        DOCS: https://nightly.spacy.io/api/scorer#score_spans
+        DOCS: https://spacy.io/api/scorer#score_spans
         """
         score = PRFScore()
         score_per_type = dict()
@@ -367,7 +370,6 @@ class Scorer:
                 f"{attr}_per_type": None,
             }
 
-
     @staticmethod
     def score_cats(
         examples: Iterable[Example],
@@ -411,7 +413,7 @@ class Scorer:
                 attr_f_per_type,
                 attr_auc_per_type
 
-        DOCS: https://nightly.spacy.io/api/scorer#score_cats
+        DOCS: https://spacy.io/api/scorer#score_cats
         """
         if threshold is None:
             threshold = 0.5 if multi_label else 0.0
@@ -458,8 +460,8 @@ class Scorer:
                 gold_label, gold_score = max(gold_cats, key=lambda it: it[1])
                 if gold_score is not None and gold_score > 0:
                     f_per_type[gold_label].fn += 1
-            else:
-                pred_label, pred_score = max(pred_cats, key=lambda it: it[1])
+            elif pred_cats:
+                pred_label, pred_score = max(pred_cats.items(), key=lambda it: it[1])
                 if pred_score >= threshold:
                     f_per_type[pred_label].fp += 1
         micro_prf = PRFScore()
@@ -473,7 +475,10 @@ class Scorer:
         macro_f = sum(prf.fscore for prf in f_per_type.values()) / n_cats
         # Limit macro_auc to those labels with gold annotations,
         # but still divide by all cats to avoid artificial boosting of datasets with missing labels
-        macro_auc = sum(auc.score if auc.is_binary() else 0.0 for auc in auc_per_type.values()) / n_cats
+        macro_auc = (
+            sum(auc.score if auc.is_binary() else 0.0 for auc in auc_per_type.values())
+            / n_cats
+        )
         results = {
             f"{attr}_score": None,
             f"{attr}_score_desc": None,
@@ -485,7 +490,9 @@ class Scorer:
             f"{attr}_macro_f": macro_f,
             f"{attr}_macro_auc": macro_auc,
             f"{attr}_f_per_type": {k: v.to_dict() for k, v in f_per_type.items()},
-            f"{attr}_auc_per_type": {k: v.score if v.is_binary() else None for k, v in auc_per_type.items()},
+            f"{attr}_auc_per_type": {
+                k: v.score if v.is_binary() else None for k, v in auc_per_type.items()
+            },
         }
         if len(labels) == 2 and not multi_label and positive_label:
             positive_label_f = results[f"{attr}_f_per_type"][positive_label]["f"]
@@ -512,7 +519,7 @@ class Scorer:
         negative_labels (Iterable[str]): The string values that refer to no annotation (e.g. "NIL")
         RETURNS (Dict[str, Any]): A dictionary containing the scores.
 
-        DOCS: https://nightly.spacy.io/api/scorer#score_links
+        DOCS: https://spacy.io/api/scorer#score_links
         """
         f_per_type = {}
         for example in examples:
@@ -596,7 +603,7 @@ class Scorer:
         RETURNS (Dict[str, Any]): A dictionary containing the scores:
             attr_uas, attr_las, and attr_las_per_type.
 
-        DOCS: https://nightly.spacy.io/api/scorer#score_deps
+        DOCS: https://spacy.io/api/scorer#score_deps
         """
         unlabelled = PRFScore()
         labelled = PRFScore()
@@ -675,8 +682,7 @@ class Scorer:
 
 
 def get_ner_prf(examples: Iterable[Example]) -> Dict[str, Any]:
-    """Compute micro-PRF and per-entity PRF scores for a sequence of examples.
-    """
+    """Compute micro-PRF and per-entity PRF scores for a sequence of examples."""
     score_per_type = defaultdict(PRFScore)
     for eg in examples:
         if not eg.y.has_annotation("ENT_IOB"):

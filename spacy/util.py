@@ -8,13 +8,14 @@ import re
 from pathlib import Path
 import thinc
 from thinc.api import NumpyOps, get_current_ops, Adam, Config, Optimizer
-from thinc.api import ConfigValidationError
+from thinc.api import ConfigValidationError, Model
 import functools
 import itertools
 import numpy.random
 import numpy
 import srsly
 import catalogue
+from catalogue import RegistryError, Registry
 import sys
 import warnings
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
@@ -69,7 +70,7 @@ CONFIG_SECTION_ORDER = ["paths", "variables", "system", "nlp", "components", "co
 
 logger = logging.getLogger("spacy")
 logger_stream_handler = logging.StreamHandler()
-logger_stream_handler.setFormatter(logging.Formatter('%(message)s'))
+logger_stream_handler.setFormatter(logging.Formatter("%(message)s"))
 logger.addHandler(logger_stream_handler)
 
 
@@ -104,6 +105,52 @@ class registry(thinc.registry):
     # themselves via entry points.
     models = catalogue.create("spacy", "models", entry_points=True)
     cli = catalogue.create("spacy", "cli", entry_points=True)
+
+    @classmethod
+    def get_registry_names(cls) -> List[str]:
+        """List all available registries."""
+        names = []
+        for name, value in inspect.getmembers(cls):
+            if not name.startswith("_") and isinstance(value, Registry):
+                names.append(name)
+        return sorted(names)
+
+    @classmethod
+    def get(cls, registry_name: str, func_name: str) -> Callable:
+        """Get a registered function from the registry."""
+        # We're overwriting this classmethod so we're able to provide more
+        # specific error messages and implement a fallback to spacy-legacy.
+        if not hasattr(cls, registry_name):
+            names = ", ".join(cls.get_registry_names()) or "none"
+            raise RegistryError(Errors.E892.format(name=registry_name, available=names))
+        reg = getattr(cls, registry_name)
+        try:
+            func = reg.get(func_name)
+        except RegistryError:
+            if func_name.startswith("spacy."):
+                legacy_name = func_name.replace("spacy.", "spacy-legacy.")
+                try:
+                    return reg.get(legacy_name)
+                except catalogue.RegistryError:
+                    pass
+            available = ", ".join(sorted(reg.get_all().keys())) or "none"
+            raise RegistryError(
+                Errors.E893.format(
+                    name=func_name, reg_name=registry_name, available=available
+                )
+            ) from None
+        return func
+
+    @classmethod
+    def has(cls, registry_name: str, func_name: str) -> bool:
+        """Check whether a function is available in a registry."""
+        if not hasattr(cls, registry_name):
+            return False
+        reg = getattr(cls, registry_name)
+        if func_name.startswith("spacy."):
+            legacy_name = func_name.replace("spacy.", "spacy-legacy.")
+            return func_name in reg or legacy_name in reg
+        return func_name in reg
 
 
 class SimpleFrozenDict(dict):
@@ -385,6 +432,20 @@ def load_model_from_config(
         validate=validate,
     )
     return nlp
+
+
+def get_sourced_components(
+    config: Union[Dict[str, Any], Config]
+) -> Dict[str, Dict[str, Any]]:
+    """RETURNS (List[str]): All sourced components in the original config,
+    e.g. {"source": "en_core_web_sm"}. If the config contains a key
+    "factory", we assume it refers to a component factory.
+    """
+    return {
+        name: cfg
+        for name, cfg in config.get("components", {}).items()
+        if "factory" not in cfg and "source" in cfg
+    }
 
 
 def resolve_dot_names(config: Config, dot_names: List[Optional[str]]) -> Tuple[Any]:
@@ -691,6 +752,24 @@ def get_package_path(name: str) -> Path:
     return Path(pkg.__file__).parent
 
 
+def replace_model_node(model: Model, target: Model, replacement: Model) -> None:
+    """Replace a node within a model with a new one, updating refs.
+
+    model (Model): The parent model.
+    target (Model): The target node.
+    replacement (Model): The node to replace the target with.
+    """
+    # Place the node into the sublayers
+    for node in model.walk():
+        if target in node.layers:
+            node.layers[node.layers.index(target)] = replacement
+    # Now fix any node references
+    for node in model.walk():
+        for ref_name in node.ref_names:
+            if node.maybe_get_ref(ref_name) is target:
+                node.set_ref(ref_name, replacement)
+
+
 def split_command(command: str) -> List[str]:
     """Split a string command using shlex. Handles platform compatibility.
 
@@ -724,7 +803,7 @@ def run_command(
     stdin (Optional[Any]): stdin to read from or None.
     capture (bool): Whether to capture the output and errors. If False,
         the stdout and stderr will not be redirected, and if there's an error,
-        sys.exit will be called with the returncode. You should use capture=False
+        sys.exit will be called with the return code. You should use capture=False
         when you want to turn over execution to the command, and capture=True
         when you want to run the command more like a function.
     RETURNS (Optional[CompletedProcess]): The process object.
@@ -850,6 +929,8 @@ def is_same_func(func1: Callable, func2: Callable) -> bool:
     RETURNS (bool): Whether it's the same function (most likely).
     """
     if not callable(func1) or not callable(func2):
+        return False
+    if not hasattr(func1, "__qualname__") or not hasattr(func2, "__qualname__"):
         return False
     same_name = func1.__qualname__ == func2.__qualname__
     same_file = inspect.getfile(func1) == inspect.getfile(func2)
@@ -1232,6 +1313,25 @@ def dot_to_object(config: Config, section: str):
     return component
 
 
+def set_dot_to_object(config: Config, section: str, value: Any) -> None:
+    """Update a config at a given position from a dot notation.
+
+    config (Config): The config.
+    section (str): The dot notation of the section in the config.
+    value (Any): The value to set in the config.
+    """
+    component = config
+    parts = section.split(".")
+    for i, item in enumerate(parts):
+        try:
+            if i == len(parts) - 1:
+                component[item] = value
+            else:
+                component = component[item]
+        except (KeyError, TypeError):
+            raise KeyError(Errors.E952.format(name=section)) from None
+
+
 def walk_dict(
     node: Dict[str, Any], parent: List[str] = []
 ) -> Iterator[Tuple[List[str], Any]]:
@@ -1373,15 +1473,29 @@ def check_bool_env_var(env_var: str) -> bool:
     return bool(value)
 
 
-def _pipe(docs, proc, kwargs):
+def _pipe(docs, proc, name, default_error_handler, kwargs):
     if hasattr(proc, "pipe"):
         yield from proc.pipe(docs, **kwargs)
     else:
         # We added some args for pipe that __call__ doesn't expect.
         kwargs = dict(kwargs)
+        error_handler = default_error_handler
+        if hasattr(proc, "get_error_handler"):
+            error_handler = proc.get_error_handler()
         for arg in ["batch_size"]:
             if arg in kwargs:
                 kwargs.pop(arg)
         for doc in docs:
-            doc = proc(doc, **kwargs)
-            yield doc
+            try:
+                doc = proc(doc, **kwargs)
+                yield doc
+            except Exception as e:
+                error_handler(name, proc, [doc], e)
+
+
+def raise_error(proc_name, proc, docs, e):
+    raise e
+
+
+def ignore_error(proc_name, proc, docs, e):
+    pass

@@ -369,6 +369,8 @@ class ConfigSchemaInit(BaseModel):
     init_tok2vec: Optional[StrictStr] = Field(..., title="Path to pretrained tok2vec weights")
     tokenizer: Dict[StrictStr, Any] = Field(..., help="Arguments to be passed into Tokenizer.initialize")
     components: Dict[StrictStr, Dict[StrictStr, Any]] = Field(..., help="Arguments for TrainablePipe.initialize methods of pipeline components, keyed by component")
+    before_init: Optional[Callable[["Language"], "Language"]] = Field(..., title="Optional callback to modify nlp object before initialization")
+    after_init: Optional[Callable[["Language"], "Language"]] = Field(..., title="Optional callback to modify nlp object after initialization")
     # fmt: on
 
     class Config:
@@ -444,6 +446,7 @@ class ProjectConfigCommand(BaseModel):
 class ProjectConfigSchema(BaseModel):
     # fmt: off
     vars: Dict[StrictStr, Any] = Field({}, title="Optional variables to substitute in commands")
+    env: Dict[StrictStr, Any] = Field({}, title="Optional variable names to substitute in commands, mapped to environment variable names")
     assets: List[Union[ProjectConfigAssetURL, ProjectConfigAssetGit]] = Field([], title="Data assets")
     workflows: Dict[StrictStr, List[StrictStr]] = Field({}, title="Named workflows, mapped to list of project commands to run in order")
     commands: List[ProjectConfigCommand] = Field([], title="Project command shortucts")

@@ -1,6 +1,6 @@
-from itertools import islice
-from typing import Optional, Iterable, Callable, Dict, Iterator, Union, List
+from typing import Optional, Iterable, Callable, Dict, Union, List
 from pathlib import Path
+from itertools import islice
 import srsly
 import random
 from thinc.api import CosineDistance, Model, Optimizer, Config
@@ -94,7 +94,7 @@ def make_entity_linker(
 class EntityLinker(TrainablePipe):
     """Pipeline component for named entity linking.
 
-    DOCS: https://nightly.spacy.io/api/entitylinker
+    DOCS: https://spacy.io/api/entitylinker
     """
 
     NIL = "NIL"  # string used to refer to a non-existing link
@@ -124,7 +124,7 @@ class EntityLinker(TrainablePipe):
         get_candidates (Callable[[KnowledgeBase, "Span"], Iterable[Candidate]]): Function that
             produces a list of candidates, given a certain knowledge base and a textual mention.
 
-        DOCS: https://nightly.spacy.io/api/entitylinker#init
+        DOCS: https://spacy.io/api/entitylinker#init
         """
         self.vocab = vocab
         self.model = model
@@ -171,7 +171,7 @@ class EntityLinker(TrainablePipe):
             Note that providing this argument, will overwrite all data accumulated in the current KB.
             Use this only when loading a KB as-such from file.
 
-        DOCS: https://nightly.spacy.io/api/entitylinker#initialize
+        DOCS: https://spacy.io/api/entitylinker#initialize
         """
         validate_get_examples(get_examples, "EntityLinker.initialize")
         if kb_loader is not None:
@@ -193,7 +193,6 @@ class EntityLinker(TrainablePipe):
         self,
         examples: Iterable[Example],
         *,
-        set_annotations: bool = False,
         drop: float = 0.0,
         sgd: Optional[Optimizer] = None,
         losses: Optional[Dict[str, float]] = None,
@@ -203,14 +202,12 @@ class EntityLinker(TrainablePipe):
 
         examples (Iterable[Example]): A batch of Example objects.
         drop (float): The dropout rate.
-        set_annotations (bool): Whether or not to update the Example objects
-            with the predictions.
         sgd (thinc.api.Optimizer): The optimizer.
         losses (Dict[str, float]): Optional record of the loss during training.
             Updated using the component name as the key.
         RETURNS (Dict[str, float]): The updated losses dictionary.
 
-        DOCS: https://nightly.spacy.io/api/entitylinker#update
+        DOCS: https://spacy.io/api/entitylinker#update
         """
         self.validate_kb()
         if losses is None:
@@ -220,11 +217,6 @@ class EntityLinker(TrainablePipe):
             return losses
         validate_examples(examples, "EntityLinker.update")
         sentence_docs = []
-        docs = [eg.predicted for eg in examples]
-        if set_annotations:
-            # This seems simpler than other ways to get that exact output -- but
-            # it does run the model twice :(
-            predictions = self.model.predict(docs)
         for eg in examples:
             sentences = [s for s in eg.reference.sents]
             kb_ids = eg.get_aligned("ENT_KB_ID", as_string=True)
@@ -260,8 +252,6 @@ class EntityLinker(TrainablePipe):
         if sgd is not None:
             self.finish_update(sgd)
         losses[self.name] += loss
-        if set_annotations:
-            self.set_annotations(docs, predictions)
         return losses
 
     def get_loss(self, examples: Iterable[Example], sentence_encodings):
@@ -283,35 +273,7 @@ class EntityLinker(TrainablePipe):
         gradients = self.distance.get_grad(sentence_encodings, entity_encodings)
         loss = self.distance.get_loss(sentence_encodings, entity_encodings)
         loss = loss / len(entity_encodings)
-        return loss, gradients
-
-    def __call__(self, doc: Doc) -> Doc:
-        """Apply the pipe to a Doc.
-
-        doc (Doc): The document to process.
-        RETURNS (Doc): The processed Doc.
-
-        DOCS: https://nightly.spacy.io/api/entitylinker#call
-        """
-        kb_ids = self.predict([doc])
-        self.set_annotations([doc], kb_ids)
-        return doc
-
-    def pipe(self, stream: Iterable[Doc], *, batch_size: int = 128) -> Iterator[Doc]:
-        """Apply the pipe to a stream of documents. This usually happens under
-        the hood when the nlp object is called on a text and all components are
-        applied to the Doc.
-
-        stream (Iterable[Doc]): A stream of documents.
-        batch_size (int): The number of documents to buffer.
-        YIELDS (Doc): Processed documents in order.
-
-        DOCS: https://nightly.spacy.io/api/entitylinker#pipe
-        """
-        for docs in util.minibatch(stream, size=batch_size):
-            kb_ids = self.predict(docs)
-            self.set_annotations(docs, kb_ids)
-            yield from docs
+        return float(loss), gradients
 
     def predict(self, docs: Iterable[Doc]) -> List[str]:
         """Apply the pipeline's model to a batch of docs, without modifying them.
@@ -321,7 +283,7 @@ class EntityLinker(TrainablePipe):
         docs (Iterable[Doc]): The documents to predict.
         RETURNS (List[int]): The models prediction for each document.
 
-        DOCS: https://nightly.spacy.io/api/entitylinker#predict
+        DOCS: https://spacy.io/api/entitylinker#predict
         """
         self.validate_kb()
         entity_count = 0
@@ -418,7 +380,7 @@ class EntityLinker(TrainablePipe):
         docs (Iterable[Doc]): The documents to modify.
         kb_ids (List[str]): The IDs to set, produced by EntityLinker.predict.
 
-        DOCS: https://nightly.spacy.io/api/entitylinker#set_annotations
+        DOCS: https://spacy.io/api/entitylinker#set_annotations
         """
         count_ents = len([ent for doc in docs for ent in doc.ents])
         if count_ents != len(kb_ids):
@@ -437,7 +399,7 @@ class EntityLinker(TrainablePipe):
         examples (Iterable[Example]): The examples to score.
         RETURNS (Dict[str, Any]): The scores.
 
-        DOCS TODO: https://nightly.spacy.io/api/entity_linker#score
+        DOCS TODO: https://spacy.io/api/entity_linker#score
         """
         validate_examples(examples, "EntityLinker.score")
         return Scorer.score_links(examples, negative_labels=[self.NIL])
@@ -450,7 +412,7 @@ class EntityLinker(TrainablePipe):
         path (str / Path): Path to a directory.
         exclude (Iterable[str]): String names of serialization fields to exclude.
 
-        DOCS: https://nightly.spacy.io/api/entitylinker#to_disk
+        DOCS: https://spacy.io/api/entitylinker#to_disk
         """
         serialize = {}
         serialize["vocab"] = lambda p: self.vocab.to_disk(p)
@@ -468,7 +430,7 @@ class EntityLinker(TrainablePipe):
         exclude (Iterable[str]): String names of serialization fields to exclude.
         RETURNS (EntityLinker): The modified EntityLinker object.
 
-        DOCS: https://nightly.spacy.io/api/entitylinker#from_disk
+        DOCS: https://spacy.io/api/entitylinker#from_disk
         """
 
         def load_model(p):

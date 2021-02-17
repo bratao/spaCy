@@ -83,6 +83,7 @@ def test_PrecomputableAffine(nO=4, nI=5, nF=3, nP=2):
 def test_prefer_gpu():
     try:
         import cupy  # noqa: F401
+
         prefer_gpu()
         assert isinstance(get_current_ops(), CupyOps)
     except ImportError:
@@ -92,17 +93,20 @@ def test_prefer_gpu():
 def test_require_gpu():
     try:
         import cupy  # noqa: F401
+
         require_gpu()
         assert isinstance(get_current_ops(), CupyOps)
     except ImportError:
         with pytest.raises(ValueError):
             require_gpu()
 
+
 def test_require_cpu():
     require_cpu()
     assert isinstance(get_current_ops(), NumpyOps)
     try:
         import cupy  # noqa: F401
+
         require_gpu()
         assert isinstance(get_current_ops(), CupyOps)
     except ImportError:
@@ -199,6 +203,25 @@ def test_dot_to_dict(dot_notation, expected):
     result = util.dot_to_dict(dot_notation)
     assert result == expected
     assert util.dict_to_dot(result) == dot_notation
+
+
+def test_set_dot_to_object():
+    config = {"foo": {"bar": 1, "baz": {"x": "y"}}, "test": {"a": {"b": "c"}}}
+    with pytest.raises(KeyError):
+        util.set_dot_to_object(config, "foo.bar.baz", 100)
+    with pytest.raises(KeyError):
+        util.set_dot_to_object(config, "hello.world", 100)
+    with pytest.raises(KeyError):
+        util.set_dot_to_object(config, "test.a.b.c", 100)
+    util.set_dot_to_object(config, "foo.bar", 100)
+    assert config["foo"]["bar"] == 100
+    util.set_dot_to_object(config, "foo.baz.x", {"hello": "world"})
+    assert config["foo"]["baz"]["x"]["hello"] == "world"
+    assert config["test"]["a"]["b"] == "c"
+    util.set_dot_to_object(config, "foo", 123)
+    assert config["foo"] == 123
+    util.set_dot_to_object(config, "test", "hello")
+    assert dict(config) == {"foo": 123, "test": "hello"}
 
 
 @pytest.mark.parametrize(

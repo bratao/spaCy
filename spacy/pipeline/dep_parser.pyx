@@ -1,4 +1,5 @@
 # cython: infer_types=True, profile=True, binding=True
+from collections import defaultdict
 from typing import Optional, Iterable
 from thinc.api import Model, Config
 
@@ -8,6 +9,7 @@ from ._parser_internals.arc_eager cimport ArcEager
 from .functions import merge_subtokens
 from ..language import Language
 from ._parser_internals import nonproj
+from ._parser_internals.nonproj import DELIMITER
 from ..scorer import Scorer
 from ..training import validate_examples
 
@@ -200,7 +202,7 @@ def make_beam_parser(
 cdef class DependencyParser(Parser):
     """Pipeline component for dependency parsing.
 
-    DOCS: https://nightly.spacy.io/api/dependencyparser
+    DOCS: https://spacy.io/api/dependencyparser
     """
     TransitionSystem = ArcEager
 
@@ -229,8 +231,8 @@ cdef class DependencyParser(Parser):
         for move in self.move_names:
             if "-" in move:
                 label = move.split("-")[1]
-                if "||" in label:
-                    label = label.split("||")[1]
+                if DELIMITER in label:
+                    label = label.split(DELIMITER)[1]
                 labels.add(label)
         return tuple(sorted(labels))
 
@@ -241,7 +243,7 @@ cdef class DependencyParser(Parser):
         RETURNS (Dict[str, Any]): The scores, produced by Scorer.score_spans
             and Scorer.score_deps.
 
-        DOCS: https://nightly.spacy.io/api/dependencyparser#score
+        DOCS: https://spacy.io/api/dependencyparser#score
         """
         def has_sents(doc):
             return doc.has_annotation("SENT_START")
@@ -258,3 +260,27 @@ cdef class DependencyParser(Parser):
         results.update(Scorer.score_deps(examples, "dep", **kwargs))
         del results["sents_per_type"]
         return results
+
+    def scored_parses(self, beams):
+        """Return two dictionaries with scores for each beam/doc that was processed:
+        one containing (i, head) keys, and another containing (i, label) keys.
+        """
+        head_scores = []
+        label_scores = []
+        for beam in beams:
+            score_head_dict = defaultdict(float)
+            score_label_dict = defaultdict(float)
+            for score, parses in self.moves.get_beam_parses(beam):
+                for head, i, label in parses:
+                    score_head_dict[(i, head)] += score
+                    score_label_dict[(i, label)] += score
+            head_scores.append(score_head_dict)
+            label_scores.append(score_label_dict)
+        return head_scores, label_scores
+
+    def _ensure_labels_are_added(self, docs):
+        # This gives the parser a chance to add labels it's missing for a batch
+        # of documents. However, this isn't desirable for the dependency parser,
+        # because we instead have a label frequency cut-off and back off rare
+        # labels to 'dep'.
+        pass

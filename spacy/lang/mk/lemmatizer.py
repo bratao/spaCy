@@ -9,21 +9,24 @@ class MacedonianLemmatizer(Lemmatizer):
     def rule_lemmatize(self, token: Token) -> List[str]:
         string = token.text
         univ_pos = token.pos_.lower()
-        morphology = token.morph.to_dict()
 
         if univ_pos in ("", "eol", "space"):
             return [string.lower()]
 
-        if string[-3:] == 'јќи':
+        if string[-3:] == "јќи":
             string = string[:-3]
             univ_pos = "verb"
 
-        if callable(self.is_base_form) and self.is_base_form(univ_pos, morphology):
-            return [string.lower()]
         index_table = self.lookups.get_table("lemma_index", {})
         exc_table = self.lookups.get_table("lemma_exc", {})
         rules_table = self.lookups.get_table("lemma_rules", {})
-        if not any((index_table.get(univ_pos), exc_table.get(univ_pos), rules_table.get(univ_pos))):
+        if not any(
+            (
+                index_table.get(univ_pos),
+                exc_table.get(univ_pos),
+                rules_table.get(univ_pos),
+            )
+        ):
             if univ_pos == "propn":
                 return [string]
             else:

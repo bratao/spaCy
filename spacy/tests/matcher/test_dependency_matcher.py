@@ -334,3 +334,13 @@ def test_dependency_matcher_ops(en_vocab, doc, left, right, op, num_matches):
     matcher.add("pattern", [pattern])
     matches = matcher(doc)
     assert len(matches) == num_matches
+
+
+def test_dependency_matcher_long_matches(en_vocab, doc):
+    pattern = [
+        {"RIGHT_ID": "quick", "RIGHT_ATTRS": {"DEP": "amod", "OP": "+"}},
+    ]
+
+    matcher = DependencyMatcher(en_vocab)
+    with pytest.raises(ValueError):
+        matcher.add("pattern", [pattern])

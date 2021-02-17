@@ -30,6 +30,11 @@ def tokenizer():
 
 
 @pytest.fixture(scope="session")
+def am_tokenizer():
+    return get_lang_class("am")().tokenizer
+
+
+@pytest.fixture(scope="session")
 def ar_tokenizer():
     return get_lang_class("ar")().tokenizer
 
@@ -246,6 +251,11 @@ def th_tokenizer():
 
 
 @pytest.fixture(scope="session")
+def ti_tokenizer():
+    return get_lang_class("ti")().tokenizer
+
+
+@pytest.fixture(scope="session")
 def tr_tokenizer():
     return get_lang_class("tr")().tokenizer
 
@@ -253,6 +263,11 @@ def tr_tokenizer():
 @pytest.fixture(scope="session")
 def tt_tokenizer():
     return get_lang_class("tt")().tokenizer
+
+
+@pytest.fixture(scope="session")
+def ky_tokenizer():
+    return get_lang_class("ky")().tokenizer
 
 
 @pytest.fixture(scope="session")

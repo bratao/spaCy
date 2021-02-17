@@ -173,10 +173,9 @@ and _before_ loading any pipelines.
 
 ### spacy.require_cpu {#spacy.require_cpu tag="function" new="3.0.0"}
 
-Allocate data and perform operations on CPU. 
-If data has already been allocated on GPU, it will not
-be moved. Ideally, this function should be called right after importing spaCy
-and _before_ loading any pipelines.
+Allocate data and perform operations on CPU. If data has already been allocated
+on GPU, it will not be moved. Ideally, this function should be called right
+after importing spaCy and _before_ loading any pipelines.
 
 > #### Example
 >
@@ -186,9 +185,9 @@ and _before_ loading any pipelines.
 > nlp = spacy.load("en_core_web_sm")
 > ```
 
-| Name        | Description                                      |
-| ----------- | ------------------------------------------------ |
-| **RETURNS** | `True` ~~bool~~                                  |
+| Name        | Description     |
+| ----------- | --------------- |
+| **RETURNS** | `True` ~~bool~~ |
 
 ## displaCy {#displacy source="spacy/displacy"}
 
@@ -545,7 +544,7 @@ label sets.
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `path`      | The path to the labels file generated with [`init labels`](/api/cli#init-labels). ~~Path~~                                                                                                                                |
 | `require`   | Whether to require the file to exist. If set to `False` and the labels file doesn't exist, the loader will return `None` and the `initialize` method will extract the labels from the data. Defaults to `False`. ~~bool~~ |
-| **CREATES** | The                                                                                                                                                                                                                       |
+| **CREATES** | The list of labels. ~~List[str]~~                                                                                                                                                                                         |
 
 ### Corpus readers {#corpus-readers source="spacy/training/corpus.py" new="3"}
 
@@ -728,7 +727,7 @@ capitalization by including a mix of capitalized and lowercase examples. See the
 
 Create a data augmentation callback that uses orth-variant replacement. The
 callback can be added to a corpus or other data iterator during training. It's
-is especially useful for punctuation and case replacement, to help generalize
+especially useful for punctuation and case replacement, to help generalize
 beyond corpora that don't have smart quotes, or only have smart quotes etc.
 
 | Name            | Description                                                                                                                                                                                                                                                                                               |

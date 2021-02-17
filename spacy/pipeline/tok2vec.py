@@ -1,4 +1,4 @@
-from typing import Iterator, Sequence, Iterable, Optional, Dict, Callable, List
+from typing import Sequence, Iterable, Optional, Dict, Callable, List
 from thinc.api import Model, set_dropout_rate, Optimizer, Config
 from itertools import islice
 
@@ -8,8 +8,6 @@ from ..tokens import Doc
 from ..vocab import Vocab
 from ..language import Language
 from ..errors import Errors
-from ..util import minibatch
-
 
 default_model_config = """
 [model]
@@ -57,63 +55,59 @@ class Tok2Vec(TrainablePipe):
             a list of Doc objects as input, and output a list of 2d float arrays.
         name (str): The component instance name.
 
-        DOCS: https://nightly.spacy.io/api/tok2vec#init
+        DOCS: https://spacy.io/api/tok2vec#init
         """
         self.vocab = vocab
         self.model = model
         self.name = name
-        self.listeners = []
+        self.listener_map = {}
         self.cfg = {}
 
-    def add_listener(self, listener: "Tok2VecListener") -> None:
-        """Add a listener for a downstream component. Usually internals."""
-        self.listeners.append(listener)
+    @property
+    def listeners(self) -> List["Tok2VecListener"]:
+        """RETURNS (List[Tok2VecListener]): The listener models listening to this
+        component. Usually internals.
+        """
+        return [m for c in self.listening_components for m in self.listener_map[c]]
 
-    def find_listeners(self, model: Model) -> None:
-        """Walk over a model, looking for layers that are Tok2vecListener
-        subclasses that have an upstream_name that matches this component.
-        Listeners can also set their upstream_name attribute to the wildcard
-        string '*' to match any `Tok2Vec`.
+    @property
+    def listening_components(self) -> List[str]:
+        """RETURNS (List[str]): The downstream components listening to this
+        component. Usually internals.
+        """
+        return list(self.listener_map.keys())
+
+    def add_listener(self, listener: "Tok2VecListener", component_name: str) -> None:
+        """Add a listener for a downstream component. Usually internals."""
+        self.listener_map.setdefault(component_name, [])
+        if listener not in self.listener_map[component_name]:
+            self.listener_map[component_name].append(listener)
+
+    def remove_listener(self, listener: "Tok2VecListener", component_name: str) -> bool:
+        """Remove a listener for a downstream component. Usually internals."""
+        if component_name in self.listener_map:
+            if listener in self.listener_map[component_name]:
+                self.listener_map[component_name].remove(listener)
+                # If no listeners are left, remove entry
+                if not self.listener_map[component_name]:
+                    del self.listener_map[component_name]
+                return True
+        return False
+
+    def find_listeners(self, component) -> None:
+        """Walk over a model of a processing component, looking for layers that
+        are Tok2vecListener subclasses that have an upstream_name that matches
+        this component. Listeners can also set their upstream_name attribute to
+        the wildcard string '*' to match any `Tok2Vec`.
 
         You're unlikely to ever need multiple `Tok2Vec` components, so it's
         fine to leave your listeners upstream_name on '*'.
         """
-        for node in model.walk():
-            if isinstance(node, Tok2VecListener) and node.upstream_name in (
-                "*",
-                self.name,
-            ):
-                self.add_listener(node)
-
-    def __call__(self, doc: Doc) -> Doc:
-        """Add context-sensitive embeddings to the Doc.tensor attribute, allowing
-        them to be used as features by downstream components.
-
-        docs (Doc): The Doc to process.
-        RETURNS (Doc): The processed Doc.
-
-        DOCS: https://nightly.spacy.io/api/tok2vec#call
-        """
-        tokvecses = self.predict([doc])
-        self.set_annotations([doc], tokvecses)
-        return doc
-
-    def pipe(self, stream: Iterator[Doc], *, batch_size: int = 128) -> Iterator[Doc]:
-        """Apply the pipe to a stream of documents. This usually happens under
-        the hood when the nlp object is called on a text and all components are
-        applied to the Doc.
-
-        stream (Iterable[Doc]): A stream of documents.
-        batch_size (int): The number of documents to buffer.
-        YIELDS (Doc): Processed documents in order.
-
-        DOCS: https://nightly.spacy.io/api/tok2vec#pipe
-        """
-        for docs in minibatch(stream, batch_size):
-            docs = list(docs)
-            tokvecses = self.predict(docs)
-            self.set_annotations(docs, tokvecses)
-            yield from docs
+        names = ("*", self.name)
+        if isinstance(getattr(component, "model", None), Model):
+            for node in component.model.walk():
+                if isinstance(node, Tok2VecListener) and node.upstream_name in names:
+                    self.add_listener(node, component.name)
 
     def predict(self, docs: Iterable[Doc]):
         """Apply the pipeline's model to a batch of docs, without modifying them.
@@ -122,12 +116,12 @@ class Tok2Vec(TrainablePipe):
         docs (Iterable[Doc]): The documents to predict.
         RETURNS: Vector representations for each token in the documents.
 
-        DOCS: https://nightly.spacy.io/api/tok2vec#predict
+        DOCS: https://spacy.io/api/tok2vec#predict
         """
         tokvecs = self.model.predict(docs)
         batch_id = Tok2VecListener.get_batch_id(docs)
         for listener in self.listeners:
-            listener.receive(batch_id, tokvecs, lambda dX: [])
+            listener.receive(batch_id, tokvecs, _empty_backprop)
         return tokvecs
 
     def set_annotations(self, docs: Sequence[Doc], tokvecses) -> None:
@@ -136,7 +130,7 @@ class Tok2Vec(TrainablePipe):
         docs (Iterable[Doc]): The documents to modify.
         tokvecses: The tensors to set, produced by Tok2Vec.predict.
 
-        DOCS: https://nightly.spacy.io/api/tok2vec#set_annotations
+        DOCS: https://spacy.io/api/tok2vec#set_annotations
         """
         for doc, tokvecs in zip(docs, tokvecses):
             assert tokvecs.shape[0] == len(doc)
@@ -149,21 +143,18 @@ class Tok2Vec(TrainablePipe):
         drop: float = 0.0,
         sgd: Optional[Optimizer] = None,
         losses: Optional[Dict[str, float]] = None,
-        set_annotations: bool = False,
     ):
         """Learn from a batch of documents and gold-standard information,
         updating the pipe's model.
 
         examples (Iterable[Example]): A batch of Example objects.
         drop (float): The dropout rate.
-        set_annotations (bool): Whether or not to update the Example objects
-            with the predictions.
         sgd (thinc.api.Optimizer): The optimizer.
         losses (Dict[str, float]): Optional record of the loss during training.
             Updated using the component name as the key.
         RETURNS (Dict[str, float]): The updated losses dictionary.
 
-        DOCS: https://nightly.spacy.io/api/tok2vec#update
+        DOCS: https://spacy.io/api/tok2vec#update
         """
         if losses is None:
             losses = {}
@@ -196,8 +187,6 @@ class Tok2Vec(TrainablePipe):
             listener.receive(batch_id, tokvecs, accumulate_gradient)
         if self.listeners:
             self.listeners[-1].receive(batch_id, tokvecs, backprop)
-        if set_annotations:
-            self.set_annotations(docs, tokvecs)
         return losses
 
     def get_loss(self, examples, scores) -> None:
@@ -216,7 +205,7 @@ class Tok2Vec(TrainablePipe):
             returns a representative sample of gold-standard Example objects.
         nlp (Language): The current nlp object the component is part of.
 
-        DOCS: https://nightly.spacy.io/api/tok2vec#initialize
+        DOCS: https://spacy.io/api/tok2vec#initialize
         """
         validate_get_examples(get_examples, "Tok2Vec.initialize")
         doc_sample = []
@@ -302,12 +291,18 @@ def forward(model: Tok2VecListener, inputs, is_train: bool):
         # of data.
         # When the components batch differently, we don't receive a matching
         # prediction from the upstream, so we can't predict.
-        if not all(doc.tensor.size for doc in inputs):
-            # But we do need to do *something* if the tensor hasn't been set.
-            # The compromise is to at least return data of the right shape,
-            # so the output is valid.
-            width = model.get_dim("nO")
-            outputs = [model.ops.alloc2f(len(doc), width) for doc in inputs]
-        else:
-            outputs = [doc.tensor for doc in inputs]
+        outputs = []
+        width = model.get_dim("nO")
+        for doc in inputs:
+            if doc.tensor.size == 0:
+                # But we do need to do *something* if the tensor hasn't been set.
+                # The compromise is to at least return data of the right shape,
+                # so the output is valid.
+                outputs.append(model.ops.alloc2f(len(doc), width))
+            else:
+                outputs.append(doc.tensor)
         return outputs, lambda dX: []
+
+
+def _empty_backprop(dX):  # for pickling
+    return []

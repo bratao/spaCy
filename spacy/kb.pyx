@@ -23,7 +23,7 @@ cdef class Candidate:
     algorithm which will disambiguate the various candidates to the correct one.
     Each candidate (alias, entity) pair is assigned to a certain prior probability.
 
-    DOCS: https://nightly.spacy.io/api/kb/#candidate_init
+    DOCS: https://spacy.io/api/kb/#candidate_init
     """
 
     def __init__(self, KnowledgeBase kb, entity_hash, entity_freq, entity_vector, alias_hash, prior_prob):
@@ -81,7 +81,7 @@ cdef class KnowledgeBase:
     """A `KnowledgeBase` instance stores unique identifiers for entities and their textual aliases,
     to support entity linking of named entities to real-world concepts.
 
-    DOCS: https://nightly.spacy.io/api/kb
+    DOCS: https://spacy.io/api/kb
     """
 
     def __init__(self, Vocab vocab, entity_vector_length):
@@ -187,6 +187,10 @@ cdef class KnowledgeBase:
         For a given alias, add its potential entities and prior probabilies to the KB.
         Return the alias_hash at the end
         """
+        if alias is None or len(alias) == 0:
+            raise ValueError(Errors.E890.format(alias=alias))
+
+        previous_alias_nr = self.get_size_aliases()
         # Throw an error if the length of entities and probabilities are not the same
         if not len(entities) == len(probabilities):
             raise ValueError(Errors.E132.format(alias=alias,
@@ -220,6 +224,8 @@ cdef class KnowledgeBase:
         new_index = self.c_add_aliases(alias_hash=alias_hash, entry_indices=entry_indices, probs=probs)
         self._alias_index[alias_hash] = new_index
 
+        if previous_alias_nr + 1 != self.get_size_aliases():
+            raise RuntimeError(Errors.E891.format(alias=alias))
         return alias_hash
 
     def append_alias(self, unicode alias, unicode entity, float prior_prob, ignore_warnings=False):

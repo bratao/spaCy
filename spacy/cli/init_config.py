@@ -32,6 +32,7 @@ def init_config_cli(
     optimize: Optimizations = Opt(Optimizations.efficiency.value, "--optimize", "-o", help="Whether to optimize for efficiency (faster inference, smaller model, lower memory consumption) or higher accuracy (potentially larger and slower model). This will impact the choice of architecture, pretrained weights and related hyperparameters."),
     gpu: bool = Opt(False, "--gpu", "-G", help="Whether the model can run on GPU. This will impact the choice of architecture, pretrained weights and related hyperparameters."),
     pretraining: bool = Opt(False, "--pretraining", "-pt", help="Include config for pretraining (with 'spacy pretrain')"),
+    force_overwrite: bool = Opt(False, "--force", "-F", help="Force overwriting the output file"),
     # fmt: on
 ):
     """
@@ -40,12 +41,18 @@ def init_config_cli(
     optimal settings for your use case. This includes the choice of architecture,
     pretrained weights and related hyperparameters.
 
-    DOCS: https://nightly.spacy.io/api/cli#init-config
+    DOCS: https://spacy.io/api/cli#init-config
     """
     if isinstance(optimize, Optimizations):  # instance of enum from the CLI
         optimize = optimize.value
     pipeline = string_to_list(pipeline)
     is_stdout = str(output_file) == "-"
+    if not is_stdout and output_file.exists() and not force_overwrite:
+        msg = Printer()
+        msg.fail(
+            "The provided output file already exists. To force overwriting the config file, set the --force or -F flag.",
+            exits=1,
+        )
     config = init_config(
         lang=lang,
         pipeline=pipeline,
@@ -71,9 +78,9 @@ def init_fill_config_cli(
     from the default config and will create all objects, check the registered
     functions for their default values and update the base config. This command
     can be used with a config generated via the training quickstart widget:
-    https://nightly.spacy.io/usage/training#quickstart
+    https://spacy.io/usage/training#quickstart
 
-    DOCS: https://nightly.spacy.io/api/cli#init-fill-config
+    DOCS: https://spacy.io/api/cli#init-fill-config
     """
     fill_config(output_file, base_path, pretraining=pretraining, diff=diff)
 
@@ -96,6 +103,10 @@ def fill_config(
     # config result is a valid config
     nlp = util.load_model_from_config(nlp.config)
     filled = nlp.config
+    # If we have sourced components in the base config, those will have been
+    # replaced with their actual config after loading, so we have to re-add them
+    sourced = util.get_sourced_components(config)
+    filled["components"].update(sourced)
     if pretraining:
         validate_config_for_pretrain(filled, msg)
         pretrain_config = util.load_config(DEFAULT_CONFIG_PRETRAIN_PATH)
@@ -133,7 +144,8 @@ def init_config(
         template = Template(f.read())
     # Filter out duplicates since tok2vec and transformer are added by template
     pipeline = [pipe for pipe in pipeline if pipe not in ("tok2vec", "transformer")]
-    reco = RecommendationSchema(**RECOMMENDATIONS.get(lang, {})).dict()
+    defaults = RECOMMENDATIONS["__default__"]
+    reco = RecommendationSchema(**RECOMMENDATIONS.get(lang, defaults)).dict()
     variables = {
         "lang": lang,
         "components": pipeline,
@@ -160,9 +172,11 @@ def init_config(
         "Pipeline": ", ".join(pipeline),
         "Optimize for": optimize,
         "Hardware": variables["hardware"].upper(),
-        "Transformer": template_vars.transformer.get("name", False),
+        "Transformer": template_vars.transformer.get("name")
+        if template_vars.use_transformer
+        else None,
     }
-    msg.info("Generated template specific for your use case")
+    msg.info("Generated config template specific for your use case")
     for label, value in use_case.items():
         msg.text(f"- {label}: {value}")
     with show_validation_error(hint_fill=False):

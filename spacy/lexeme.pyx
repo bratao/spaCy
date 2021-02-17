@@ -30,7 +30,7 @@ cdef class Lexeme:
     tag, dependency parse, or lemma (lemmatization depends on the
     part-of-speech tag).
 
-    DOCS: https://nightly.spacy.io/api/lexeme
+    DOCS: https://spacy.io/api/lexeme
     """
     def __init__(self, Vocab vocab, attr_t orth):
         """Create a Lexeme object.
@@ -451,7 +451,7 @@ cdef class Lexeme:
             Lexeme.c_set_flag(self.c, IS_QUOTE, x)
 
     property is_left_punct:
-        """RETURNS (bool): Whether the lexeme is left punctuation, e.g. )."""
+        """RETURNS (bool): Whether the lexeme is left punctuation, e.g. (."""
         def __get__(self):
             return Lexeme.c_check_flag(self.c, IS_LEFT_PUNCT)
 

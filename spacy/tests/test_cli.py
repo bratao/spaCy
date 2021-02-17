@@ -3,7 +3,9 @@ from click import NoSuchOption
 from spacy.training import docs_to_json, offsets_to_biluo_tags
 from spacy.training.converters import iob_to_docs, conll_ner_to_docs, conllu_to_docs
 from spacy.schemas import ProjectConfigSchema, RecommendationSchema, validate
+from spacy.lang.nl import Dutch
 from spacy.util import ENV_VARS
+from spacy.cli import info
 from spacy.cli.init_config import init_config, RECOMMENDATIONS
 from spacy.cli._util import validate_project_commands, parse_config_overrides
 from spacy.cli._util import load_project_config, substitute_project_variables
@@ -13,6 +15,16 @@ import srsly
 import os
 
 from .util import make_tempdir
+
+
+def test_cli_info():
+    nlp = Dutch()
+    nlp.add_pipe("textcat")
+    with make_tempdir() as tmp_dir:
+        nlp.to_disk(tmp_dir)
+        raw_data = info(tmp_dir, exclude=[""])
+        assert raw_data["lang"] == "nl"
+        assert raw_data["components"] == ["textcat"]
 
 
 def test_cli_converters_conllu_to_docs():
@@ -311,6 +323,23 @@ def test_project_config_interpolation():
     project = {"commands": commands, "vars": variables}
     with pytest.raises(ConfigValidationError):
         substitute_project_variables(project)
+
+
+def test_project_config_interpolation_env():
+    variables = {"a": 10}
+    env_var = "SPACY_TEST_FOO"
+    env_vars = {"foo": env_var}
+    commands = [{"name": "x", "script": ["hello ${vars.a} ${env.foo}"]}]
+    project = {"commands": commands, "vars": variables, "env": env_vars}
+    with make_tempdir() as d:
+        srsly.write_yaml(d / "project.yml", project)
+        cfg = load_project_config(d)
+    assert cfg["commands"][0]["script"][0] == "hello 10 "
+    os.environ[env_var] = "123"
+    with make_tempdir() as d:
+        srsly.write_yaml(d / "project.yml", project)
+        cfg = load_project_config(d)
+    assert cfg["commands"][0]["script"][0] == "hello 10 123"
 
 
 @pytest.mark.parametrize(

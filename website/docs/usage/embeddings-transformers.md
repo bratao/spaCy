@@ -129,13 +129,13 @@ the entity recognizer, use a
 factory = "tok2vec"
 
 [components.tok2vec.model]
-@architectures = "spacy.Tok2Vec.v1"
+@architectures = "spacy.Tok2Vec.v2"
 
 [components.tok2vec.model.embed]
 @architectures = "spacy.MultiHashEmbed.v1"
 
 [components.tok2vec.model.encode]
-@architectures = "spacy.MaxoutWindowEncoder.v1"
+@architectures = "spacy.MaxoutWindowEncoder.v2"
 
 [components.ner]
 factory = "ner"
@@ -161,13 +161,13 @@ factory = "ner"
 @architectures = "spacy.TransitionBasedParser.v1"
 
 [components.ner.model.tok2vec]
-@architectures = "spacy.Tok2Vec.v1"
+@architectures = "spacy.Tok2Vec.v2"
 
 [components.ner.model.tok2vec.embed]
 @architectures = "spacy.MultiHashEmbed.v1"
 
 [components.ner.model.tok2vec.encode]
-@architectures = "spacy.MaxoutWindowEncoder.v1"
+@architectures = "spacy.MaxoutWindowEncoder.v2"
 ```
 
 <!-- TODO: Once rehearsal is tested, mention it here. -->
@@ -204,19 +204,40 @@ drop-in replacements that let you achieve **higher accuracy** in exchange for
 > downloaded: 3GB CUDA runtime, 800MB PyTorch, 400MB CuPy, 500MB weights, 200MB
 > spaCy and dependencies.
 
-Once you have CUDA installed, you'll need to install two pip packages,
-[`cupy`](https://docs.cupy.dev/en/stable/install.html) and
-[`spacy-transformers`](https://github.com/explosion/spacy-transformers). `cupy`
-is just like `numpy`, but for GPU. The best way to install it is to choose a
-wheel that matches the version of CUDA you're using. You may also need to set
-the `CUDA_PATH` environment variable if your CUDA runtime is installed in a
-non-standard location. Putting it all together, if you had installed CUDA 10.2
-in `/opt/nvidia/cuda`, you would run:
+Once you have CUDA installed, we recommend installing PyTorch following the
+[PyTorch installation guidelines](https://pytorch.org/get-started/locally/) for
+your package manager and CUDA version. If you skip this step, pip will install
+PyTorch as a dependency below, but it may not find the best version for your
+setup.
+
+```bash
+### Example: Install PyTorch 1.7.1 for CUDA 10.1 with pip
+# See: https://pytorch.org/get-started/locally/
+$ pip install torch==1.7.1+cu101 torchvision==0.8.2+cu101 torchaudio==0.7.2 -f https://download.pytorch.org/whl/torch_stable.html
+```
+
+Next, install spaCy with the extras for your CUDA version and transformers. The
+CUDA extra (e.g., `cuda92`, `cuda102`, `cuda111`) installs the correct version
+of [`cupy`](https://docs.cupy.dev/en/stable/install.html#installing-cupy), which
+is just like `numpy`, but for GPU. You may also need to set the `CUDA_PATH`
+environment variable if your CUDA runtime is installed in a non-standard
+location. Putting it all together, if you had installed CUDA 10.2 in
+`/opt/nvidia/cuda`, you would run:
 
 ```bash
 ### Installation with CUDA
 $ export CUDA_PATH="/opt/nvidia/cuda"
 $ pip install -U %%SPACY_PKG_NAME[cuda102,transformers]%%SPACY_PKG_FLAGS
+```
+
+For [`transformers`](https://huggingface.co/transformers/) v4.0.0+ and models
+that require [`SentencePiece`](https://github.com/google/sentencepiece) (e.g.,
+ALBERT, CamemBERT, XLNet, Marian, and T5), install the additional dependencies
+with:
+
+```bash
+### Install sentencepiece
+$ pip install transformers[sentencepiece]
 ```
 
 ### Runtime usage {#transformers-runtime}
@@ -713,34 +734,39 @@ layer = "tok2vec"
 
 #### Pretraining objectives {#pretraining-details}
 
-Two pretraining objectives are available, both of which are variants of the
-cloze task [Devlin et al. (2018)](https://arxiv.org/abs/1810.04805) introduced
-for BERT. The objective can be defined and configured via the
-`[pretraining.objective]` config block.
-
 > ```ini
 > ### Characters objective
 > [pretraining.objective]
-> type = "characters"
+> @architectures = "spacy.PretrainCharacters.v1"
+> maxout_pieces = 3
+> hidden_size = 300
 > n_characters = 4
 > ```
 >
 > ```ini
 > ### Vectors objective
 > [pretraining.objective]
-> type = "vectors"
+> @architectures = "spacy.PretrainVectors.v1"
+> maxout_pieces = 3
+> hidden_size = 300
 > loss = "cosine"
 > ```
 
-- **Characters:** The `"characters"` objective asks the model to predict some
-  number of leading and trailing UTF-8 bytes for the words. For instance,
-  setting `n_characters = 2`, the model will try to predict the first two and
-  last two characters of the word.
+Two pretraining objectives are available, both of which are variants of the
+cloze task [Devlin et al. (2018)](https://arxiv.org/abs/1810.04805) introduced
+for BERT. The objective can be defined and configured via the
+`[pretraining.objective]` config block.
 
-- **Vectors:** The `"vectors"` objective asks the model to predict the word's
-  vector, from a static embeddings table. This requires a word vectors model to
-  be trained and loaded. The vectors objective can optimize either a cosine or
-  an L2 loss. We've generally found cosine loss to perform better.
+- [`PretrainCharacters`](/api/architectures#pretrain_chars): The `"characters"`
+  objective asks the model to predict some number of leading and trailing UTF-8
+  bytes for the words. For instance, setting `n_characters = 2`, the model will
+  try to predict the first two and last two characters of the word.
+
+- [`PretrainVectors`](/api/architectures#pretrain_vectors): The `"vectors"`
+  objective asks the model to predict the word's vector, from a static
+  embeddings table. This requires a word vectors model to be trained and loaded.
+  The vectors objective can optimize either a cosine or an L2 loss. We've
+  generally found cosine loss to perform better.
 
 These pretraining objectives use a trick that we term **language modelling with
 approximate outputs (LMAO)**. The motivation for the trick is that predicting an

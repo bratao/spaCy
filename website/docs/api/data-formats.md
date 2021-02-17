@@ -94,7 +94,7 @@ Defines the `nlp` object, its tokenizer and
 >
 > [components.textcat.model]
 > @architectures = "spacy.TextCatBOW.v1"
-> exclusive_classes = false
+> exclusive_classes = true
 > ngram_size = 1
 > no_output_layer = false
 > ```
@@ -148,7 +148,7 @@ This section defines a **dictionary** mapping of string keys to functions. Each
 function takes an `nlp` object and yields [`Example`](/api/example) objects. By
 default, the two keys `train` and `dev` are specified and each refer to a
 [`Corpus`](/api/top-level#Corpus). When pretraining, an additional `pretrain`
-section is added that defaults to a [`JsonlCorpus`](/api/top-level#JsonlCorpus).
+section is added that defaults to a [`JsonlCorpus`](/api/top-level#jsonlcorpus).
 You can also register custom functions that return a callable.
 
 | Name       | Description                                                                                                                                                                 |
@@ -245,6 +245,8 @@ Also see the usage guides on the
 
 | Name           | Description                                                                                                                                                                                                                                                                                                                                                                                                    |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `after_init`   | Optional callback to modify the `nlp` object after initialization. ~~Optional[Callable[[Language], Language]]~~                                                                                                                                                                                                                                                                                                |
+| `before_init`  | Optional callback to modify the `nlp` object before initialization. ~~Optional[Callable[[Language], Language]]~~                                                                                                                                                                                                                                                                                               |
 | `components`   | Additional arguments passed to the `initialize` method of a pipeline component, keyed by component name. If type annotations are available on the method, the config will be validated against them. The `initialize` methods will always receive the `get_examples` callback and the current `nlp` object. ~~Dict[str, Dict[str, Any]]~~                                                                      |
 | `init_tok2vec` | Optional path to pretrained tok2vec weights created with [`spacy pretrain`](/api/cli#pretrain). Defaults to variable `${paths.init_tok2vec}`. ~~Optional[str]~~                                                                                                                                                                                                                                                |
 | `lookups`      | Additional lexeme and vocab data from [`spacy-lookups-data`](https://github.com/explosion/spacy-lookups-data). Defaults to `null`. ~~Optional[Lookups]~~                                                                                                                                                                                                                                                       |

@@ -1,5 +1,4 @@
 # cython: infer_types=True, profile=True, binding=True
-from typing import List
 import numpy
 import srsly
 from thinc.api import Model, set_dropout_rate, SequenceCategoricalCrossentropy, Config
@@ -59,7 +58,7 @@ def make_tagger(nlp: Language, name: str, model: Model):
 class Tagger(TrainablePipe):
     """Pipeline component for part-of-speech tagging.
 
-    DOCS: https://nightly.spacy.io/api/tagger
+    DOCS: https://spacy.io/api/tagger
     """
     def __init__(self, vocab, model, name="tagger"):
         """Initialize a part-of-speech tagger.
@@ -69,7 +68,7 @@ class Tagger(TrainablePipe):
         name (str): The component instance name, used to add entries to the
             losses during training.
 
-        DOCS: https://nightly.spacy.io/api/tagger#init
+        DOCS: https://spacy.io/api/tagger#init
         """
         self.vocab = vocab
         self.model = model
@@ -86,7 +85,7 @@ class Tagger(TrainablePipe):
 
         RETURNS (Tuple[str]): The labels.
 
-        DOCS: https://nightly.spacy.io/api/tagger#labels
+        DOCS: https://spacy.io/api/tagger#labels
         """
         return tuple(self.cfg["labels"])
 
@@ -95,41 +94,13 @@ class Tagger(TrainablePipe):
         """Data about the labels currently added to the component."""
         return tuple(self.cfg["labels"])
 
-    def __call__(self, doc):
-        """Apply the pipe to a Doc.
-
-        doc (Doc): The document to process.
-        RETURNS (Doc): The processed Doc.
-
-        DOCS: https://nightly.spacy.io/api/tagger#call
-        """
-        tags = self.predict([doc])
-        self.set_annotations([doc], tags)
-        return doc
-
-    def pipe(self, stream, *, batch_size=128):
-        """Apply the pipe to a stream of documents. This usually happens under
-        the hood when the nlp object is called on a text and all components are
-        applied to the Doc.
-
-        stream (Iterable[Doc]): A stream of documents.
-        batch_size (int): The number of documents to buffer.
-        YIELDS (Doc): Processed documents in order.
-
-        DOCS: https://nightly.spacy.io/api/tagger#pipe
-        """
-        for docs in util.minibatch(stream, size=batch_size):
-            tag_ids = self.predict(docs)
-            self.set_annotations(docs, tag_ids)
-            yield from docs
-
     def predict(self, docs):
         """Apply the pipeline's model to a batch of docs, without modifying them.
 
         docs (Iterable[Doc]): The documents to predict.
         RETURNS: The models prediction for each document.
 
-        DOCS: https://nightly.spacy.io/api/tagger#predict
+        DOCS: https://spacy.io/api/tagger#predict
         """
         if not any(len(doc) for doc in docs):
             # Handle cases where there are no tokens in any docs.
@@ -158,7 +129,7 @@ class Tagger(TrainablePipe):
         docs (Iterable[Doc]): The documents to modify.
         batch_tag_ids: The IDs to set, produced by Tagger.predict.
 
-        DOCS: https://nightly.spacy.io/api/tagger#set_annotations
+        DOCS: https://spacy.io/api/tagger#set_annotations
         """
         if isinstance(docs, Doc):
             docs = [docs]
@@ -173,20 +144,18 @@ class Tagger(TrainablePipe):
                 if doc.c[j].tag == 0:
                     doc.c[j].tag = self.vocab.strings[self.labels[tag_id]]
 
-    def update(self, examples, *, drop=0., sgd=None, losses=None, set_annotations=False):
+    def update(self, examples, *, drop=0., sgd=None, losses=None):
         """Learn from a batch of documents and gold-standard information,
         updating the pipe's model. Delegates to predict and get_loss.
 
         examples (Iterable[Example]): A batch of Example objects.
         drop (float): The dropout rate.
-        set_annotations (bool): Whether or not to update the Example objects
-            with the predictions.
         sgd (thinc.api.Optimizer): The optimizer.
         losses (Dict[str, float]): Optional record of the loss during training.
             Updated using the component name as the key.
         RETURNS (Dict[str, float]): The updated losses dictionary.
 
-        DOCS: https://nightly.spacy.io/api/tagger#update
+        DOCS: https://spacy.io/api/tagger#update
         """
         if losses is None:
             losses = {}
@@ -206,9 +175,6 @@ class Tagger(TrainablePipe):
             self.finish_update(sgd)
 
         losses[self.name] += loss
-        if set_annotations:
-            docs = [eg.predicted for eg in examples]
-            self.set_annotations(docs, self._scores2guesses(tag_scores))
         return losses
 
     def rehearse(self, examples, *, drop=0., sgd=None, losses=None):
@@ -224,7 +190,7 @@ class Tagger(TrainablePipe):
             Updated using the component name as the key.
         RETURNS (Dict[str, float]): The updated losses dictionary.
 
-        DOCS: https://nightly.spacy.io/api/tagger#rehearse
+        DOCS: https://spacy.io/api/tagger#rehearse
         """
         if losses is None:
             losses = {}
@@ -253,11 +219,17 @@ class Tagger(TrainablePipe):
         scores: Scores representing the model's predictions.
         RETURNS (Tuple[float, float]): The loss and the gradient.
 
-        DOCS: https://nightly.spacy.io/api/tagger#get_loss
+        DOCS: https://spacy.io/api/tagger#get_loss
         """
         validate_examples(examples, "Tagger.get_loss")
-        loss_func = SequenceCategoricalCrossentropy(names=self.labels, normalize=False, missing_value="")
-        truths = [eg.get_aligned("TAG", as_string=True) for eg in examples]
+        loss_func = SequenceCategoricalCrossentropy(names=self.labels, normalize=False)
+        # Convert empty tag "" to missing value None so that both misaligned
+        # tokens and tokens with missing annotation have the default missing
+        # value None.
+        truths = []
+        for eg in examples:
+            eg_truths = [tag if tag is not "" else None for tag in eg.get_aligned("TAG", as_string=True)]
+            truths.append(eg_truths)
         d_scores, loss = loss_func(scores, truths)
         if self.model.ops.xp.isnan(loss):
             raise ValueError(Errors.E910.format(name=self.name))
@@ -274,7 +246,7 @@ class Tagger(TrainablePipe):
             `init labels` command. If no labels are provided, the get_examples
             callback is used to extract the labels from the data.
 
-        DOCS: https://nightly.spacy.io/api/tagger#initialize
+        DOCS: https://spacy.io/api/tagger#initialize
         """
         validate_get_examples(get_examples, "Tagger.initialize")
         if labels is not None:
@@ -306,7 +278,7 @@ class Tagger(TrainablePipe):
         label (str): The label to add.
         RETURNS (int): 0 if label is already present, otherwise 1.
 
-        DOCS: https://nightly.spacy.io/api/tagger#add_label
+        DOCS: https://spacy.io/api/tagger#add_label
         """
         if not isinstance(label, str):
             raise ValueError(Errors.E187)
@@ -324,7 +296,7 @@ class Tagger(TrainablePipe):
         RETURNS (Dict[str, Any]): The scores, produced by
             Scorer.score_token_attr for the attributes "tag".
 
-        DOCS: https://nightly.spacy.io/api/tagger#score
+        DOCS: https://spacy.io/api/tagger#score
         """
         validate_examples(examples, "Tagger.score")
         return Scorer.score_token_attr(examples, "tag", **kwargs)

@@ -31,7 +31,7 @@ cdef class Tokenizer:
     """Segment text, and create Doc objects with the discovered segment
     boundaries.
 
-    DOCS: https://nightly.spacy.io/api/tokenizer
+    DOCS: https://spacy.io/api/tokenizer
     """
     def __init__(self, Vocab vocab, rules=None, prefix_search=None,
                  suffix_search=None, infix_finditer=None, token_match=None,
@@ -54,7 +54,7 @@ cdef class Tokenizer:
         EXAMPLE:
             >>> tokenizer = Tokenizer(nlp.vocab)
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#init
+        DOCS: https://spacy.io/api/tokenizer#init
         """
         self.mem = Pool()
         self._cache = PreshMap()
@@ -147,7 +147,7 @@ cdef class Tokenizer:
         string (str): The string to tokenize.
         RETURNS (Doc): A container for linguistic annotations.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#call
+        DOCS: https://spacy.io/api/tokenizer#call
         """
         doc = self._tokenize_affixes(string, True)
         self._apply_special_cases(doc)
@@ -209,7 +209,7 @@ cdef class Tokenizer:
         Defaults to 1000.
         YIELDS (Doc): A sequence of Doc objects, in order.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#pipe
+        DOCS: https://spacy.io/api/tokenizer#pipe
         """
         for text in texts:
             yield self(text)
@@ -245,7 +245,7 @@ cdef class Tokenizer:
         cdef int offset
         cdef int modified_doc_length
         # Find matches for special cases
-        self._special_matcher.find_matches(doc, &c_matches)
+        self._special_matcher.find_matches(doc, 0, doc.length, &c_matches)
         # Skip processing if no matches
         if c_matches.size() == 0:
             return True
@@ -258,6 +258,7 @@ cdef class Tokenizer:
             tokens = doc.c
         # Otherwise create a separate array to store modified tokens
         else:
+            assert max_length > 0
             tokens = <TokenC*>mem.alloc(max_length, sizeof(TokenC))
         # Modify tokenization according to filtered special cases
         offset = self._retokenize_special_spans(doc, tokens, span_data)
@@ -528,7 +529,7 @@ cdef class Tokenizer:
             and `.end()` methods, denoting the placement of internal segment
             separators, e.g. hyphens.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#find_infix
+        DOCS: https://spacy.io/api/tokenizer#find_infix
         """
         if self.infix_finditer is None:
             return 0
@@ -541,7 +542,7 @@ cdef class Tokenizer:
         string (str): The string to segment.
         RETURNS (int): The length of the prefix if present, otherwise `None`.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#find_prefix
+        DOCS: https://spacy.io/api/tokenizer#find_prefix
         """
         if self.prefix_search is None:
             return 0
@@ -555,7 +556,7 @@ cdef class Tokenizer:
         string (str): The string to segment.
         Returns (int): The length of the suffix if present, otherwise `None`.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#find_suffix
+        DOCS: https://spacy.io/api/tokenizer#find_suffix
         """
         if self.suffix_search is None:
             return 0
@@ -595,7 +596,7 @@ cdef class Tokenizer:
             a token and its attributes. The `ORTH` fields of the attributes
             must exactly match the string when they are concatenated.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#add_special_case
+        DOCS: https://spacy.io/api/tokenizer#add_special_case
         """
         self._validate_special_case(string, substrings)
         substrings = list(substrings)
@@ -610,7 +611,7 @@ cdef class Tokenizer:
             self.mem.free(stale_special)
         self._rules[string] = substrings
         self._flush_cache()
-        if self.find_prefix(string) or self.find_infix(string) or self.find_suffix(string):
+        if self.find_prefix(string) or self.find_infix(string) or self.find_suffix(string) or " " in string:
             self._special_matcher.add(string, None, self._tokenize_affixes(string, False))
 
     def _reload_special_cases(self):
@@ -634,7 +635,7 @@ cdef class Tokenizer:
         string (str): The string to tokenize.
         RETURNS (list): A list of (pattern_string, token_string) tuples
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#explain
+        DOCS: https://spacy.io/api/tokenizer#explain
         """
         prefix_search = self.prefix_search
         suffix_search = self.suffix_search
@@ -717,7 +718,7 @@ cdef class Tokenizer:
             it doesn't exist.
         exclude (list): String names of serialization fields to exclude.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#to_disk
+        DOCS: https://spacy.io/api/tokenizer#to_disk
         """
         path = util.ensure_path(path)
         with path.open("wb") as file_:
@@ -731,7 +732,7 @@ cdef class Tokenizer:
         exclude (list): String names of serialization fields to exclude.
         RETURNS (Tokenizer): The modified `Tokenizer` object.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#from_disk
+        DOCS: https://spacy.io/api/tokenizer#from_disk
         """
         path = util.ensure_path(path)
         with path.open("rb") as file_:
@@ -745,7 +746,7 @@ cdef class Tokenizer:
         exclude (list): String names of serialization fields to exclude.
         RETURNS (bytes): The serialized form of the `Tokenizer` object.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#to_bytes
+        DOCS: https://spacy.io/api/tokenizer#to_bytes
         """
         serializers = {
             "vocab": lambda: self.vocab.to_bytes(),
@@ -765,7 +766,7 @@ cdef class Tokenizer:
         exclude (list): String names of serialization fields to exclude.
         RETURNS (Tokenizer): The `Tokenizer` object.
 
-        DOCS: https://nightly.spacy.io/api/tokenizer#from_bytes
+        DOCS: https://spacy.io/api/tokenizer#from_bytes
         """
         data = {}
         deserializers = {
@@ -784,10 +785,16 @@ cdef class Tokenizer:
             self.suffix_search = re.compile(data["suffix_search"]).search
         if "infix_finditer" in data and isinstance(data["infix_finditer"], str):
             self.infix_finditer = re.compile(data["infix_finditer"]).finditer
+        # for token_match and url_match, set to None to override the language
+        # defaults if no regex is provided
         if "token_match" in data and isinstance(data["token_match"], str):
             self.token_match = re.compile(data["token_match"]).match
+        else:
+            self.token_match = None
         if "url_match" in data and isinstance(data["url_match"], str):
             self.url_match = re.compile(data["url_match"]).match
+        else:
+            self.url_match = None
         if "rules" in data and isinstance(data["rules"], dict):
             # make sure to hard reset the cache to remove data from the default exceptions
             self._rules = {}

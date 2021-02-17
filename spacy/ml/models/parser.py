@@ -21,14 +21,14 @@ def transition_parser_v1(
     nO: Optional[int] = None,
 ) -> Model:
     return build_tb_parser_model(
-    tok2vec,
-    state_type,
-    extra_state_tokens,
-    hidden_width,
-    maxout_pieces,
-    use_upper,
-    nO,
-)
+        tok2vec,
+        state_type,
+        extra_state_tokens,
+        hidden_width,
+        maxout_pieces,
+        use_upper,
+        nO,
+    )
 
 
 @registry.architectures.register("spacy.TransitionBasedParser.v2")
@@ -42,14 +42,15 @@ def transition_parser_v2(
     nO: Optional[int] = None,
 ) -> Model:
     return build_tb_parser_model(
-    tok2vec,
-    state_type,
-    extra_state_tokens,
-    hidden_width,
-    maxout_pieces,
-    use_upper,
-    nO,
-)
+        tok2vec,
+        state_type,
+        extra_state_tokens,
+        hidden_width,
+        maxout_pieces,
+        use_upper,
+        nO,
+    )
+
 
 def build_tb_parser_model(
     tok2vec: Model[List[Doc], List[Floats2d]],
@@ -162,8 +163,8 @@ def _resize_upper(model, new_nO):
         # just adding rows here.
         if smaller.has_dim("nO"):
             old_nO = smaller.get_dim("nO")
-            larger_W[: old_nO] = smaller_W
-            larger_b[: old_nO] = smaller_b
+            larger_W[:old_nO] = smaller_W
+            larger_b[:old_nO] = smaller_b
             for i in range(old_nO, new_nO):
                 model.attrs["unseen_classes"].add(i)
 
@@ -184,8 +185,7 @@ def _resize_lower(model, new_nO):
     nI = smaller.maybe_get_dim("nI")
     nF = smaller.maybe_get_dim("nF")
     nP = smaller.maybe_get_dim("nP")
-    with use_ops("numpy"):
-        larger = _define_lower(nO=new_nO, nI=nI, nF=nF, nP=nP)
+    larger = _define_lower(nO=new_nO, nI=nI, nF=nF, nP=nP)
     # it could be that the model is not initialized yet, then skip this bit
     if smaller.has_param("W"):
         larger_W = larger.ops.alloc4f(nF, new_nO, nP, nI)

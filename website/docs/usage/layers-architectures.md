@@ -134,7 +134,7 @@ labels = []
 nO = null
 
 [components.textcat.model.tok2vec]
-@architectures = "spacy.Tok2Vec.v1"
+@architectures = "spacy.Tok2Vec.v2"
 
 [components.textcat.model.tok2vec.embed]
 @architectures = "spacy.MultiHashEmbed.v1"
@@ -144,7 +144,7 @@ attrs = ["ORTH", "LOWER", "PREFIX", "SUFFIX", "SHAPE", "ID"]
 include_static_vectors = false
 
 [components.textcat.model.tok2vec.encode]
-@architectures = "spacy.MaxoutWindowEncoder.v1"
+@architectures = "spacy.MaxoutWindowEncoder.v2"
 width = ${components.textcat.model.tok2vec.embed.width}
 window_size = 1
 maxout_pieces = 3
@@ -152,7 +152,7 @@ depth = 2
 
 [components.textcat.model.linear_model]
 @architectures = "spacy.TextCatBOW.v1"
-exclusive_classes = false
+exclusive_classes = true
 ngram_size = 1
 no_output_layer = false
 ```
@@ -170,7 +170,7 @@ labels = []
 
 [components.textcat.model]
 @architectures = "spacy.TextCatBOW.v1"
-exclusive_classes = false
+exclusive_classes = true
 ngram_size = 1
 no_output_layer = false
 nO = null
@@ -201,14 +201,14 @@ tokens, and their combination forms a typical
 factory = "tok2vec"
 
 [components.tok2vec.model]
-@architectures = "spacy.Tok2Vec.v1"
+@architectures = "spacy.Tok2Vec.v2"
 
 [components.tok2vec.model.embed]
 @architectures = "spacy.MultiHashEmbed.v1"
 # ...
 
 [components.tok2vec.model.encode]
-@architectures = "spacy.MaxoutWindowEncoder.v1"
+@architectures = "spacy.MaxoutWindowEncoder.v2"
 # ...
 ```
 
@@ -224,7 +224,7 @@ architecture:
 # ...
 
 [components.tok2vec.model.encode]
-@architectures = "spacy.MaxoutWindowEncoder.v1"
+@architectures = "spacy.MaxoutWindowEncoder.v2"
 # ...
 ```
 
@@ -537,14 +537,16 @@ two major steps required:
    pass through the `nlp` pipeline.
 
 <Project id="tutorials/rel_component">
-Run this example use-case by using our project template. It includes all the 
+Run this example use-case by using our project template. It includes all the
 code to create the ML model and the pipeline component from scratch.
-It also contains two config files to train the model: 
+It also contains two config files to train the model:
 one to run on CPU with a Tok2Vec layer, and one for the GPU using a transformer.
-The project applies the relation extraction component to identify biomolecular 
-interactions in a sample dataset, but you can easily swap in your own dataset 
+The project applies the relation extraction component to identify biomolecular
+interactions in a sample dataset, but you can easily swap in your own dataset
 for your experiments in any other domain.
 </Project>
+
+<YouTube id="8HL-Ap5_Axo"></YouTube>
 
 #### Step 1: Implementing the Model {#component-rel-model}
 
@@ -716,7 +718,7 @@ that we want to classify as being related or not. As these candidate pairs are
 typically formed within one document, this function takes a [`Doc`](/api/doc) as
 input and outputs a `List` of `Span` tuples. For instance, the following
 implementation takes any two entities from the same document, as long as they
-are within a **maximum distance** (in number of tokens) of eachother:
+are within a **maximum distance** (in number of tokens) of each other:
 
 > #### config.cfg (excerpt)
 >
@@ -742,7 +744,7 @@ def create_instances(max_length: int) -> Callable[[Doc], List[Tuple[Span, Span]]
     return get_candidates
 ```
 
-This function in added to the [`@misc` registry](/api/top-level#registry) so we
+This function is added to the [`@misc` registry](/api/top-level#registry) so we
 can refer to it from the config, and easily swap it out for any other candidate
 generation function.
 
@@ -796,7 +798,7 @@ class RelationExtractor(TrainablePipe):
         self.vocab = vocab
         self.name = name
 
-    def update(self, examples, drop=0.0, set_annotations=False, sgd=None, losses=None):
+    def update(self, examples, drop=0.0, sgd=None, losses=None):
         """Learn from a batch of Example objects."""
         ...
 
@@ -824,7 +826,7 @@ will predict scores for each label. We add convenience methods to easily
 retrieve and add to them.
 
 ```python
-### The constructor (continued) 
+### The constructor (continued)
     def __init__(self, vocab, model, name="rel"):
         """Create a component instance."""
         # ...
@@ -901,7 +903,6 @@ def update(
     examples: Iterable[Example],
     *,
     drop: float = 0.0,
-    set_annotations: bool = False,
     sgd: Optional[Optimizer] = None,
     losses: Optional[Dict[str, float]] = None,
 ) -> Dict[str, float]:
@@ -1042,11 +1043,11 @@ def make_relation_extractor(nlp, name, model):
 ```
 
 <Project id="tutorials/rel_component">
-Run this example use-case by using our project template. It includes all the 
+Run this example use-case by using our project template. It includes all the
 code to create the ML model and the pipeline component from scratch.
-It contains two config files to train the model: 
+It contains two config files to train the model:
 one to run on CPU with a Tok2Vec layer, and one for the GPU using a transformer.
-The project applies the relation extraction component to identify biomolecular 
-interactions, but you can easily swap in your own dataset for your experiments 
+The project applies the relation extraction component to identify biomolecular
+interactions, but you can easily swap in your own dataset for your experiments
 in any other domain.
 </Project>

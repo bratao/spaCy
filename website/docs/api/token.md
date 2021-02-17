@@ -191,6 +191,15 @@ the morph to an unset state.
 | -------- | --------------------------------------------------------------------------------- |
 | features | The morphological features to set. ~~Union[int, dict, str, MorphAnalysis, None]~~ |
 
+## Token.has_morph {#has_morph tag="method"}
+
+Check whether the token has annotated morph information. Return `False` when the
+morph annotation is unset/missing.
+
+| Name        | Description                                   |
+| ----------- | --------------------------------------------- |
+| **RETURNS** | Whether the morph annotation is set. ~~bool~~ |
+
 ## Token.is_ancestor {#is_ancestor tag="method" model="parser"}
 
 Check whether this token is a parent, grandparent, etc. of another in the
@@ -463,7 +472,7 @@ The L2 norm of the token's vector representation.
 | `like_url`                                   | Does the token resemble a URL? ~~bool~~                                                                                                                                                                                                                               |
 | `like_num`                                   | Does the token represent a number? e.g. "10.9", "10", "ten", etc. ~~bool~~                                                                                                                                                                                            |
 | `like_email`                                 | Does the token resemble an email address? ~~bool~~                                                                                                                                                                                                                    |
-| `is_oov`                                     | Does the token have a word vector? ~~bool~~                                                                                                                                                                                                                           |
+| `is_oov`                                     | Is the token out-of-vocabulary (i.e. does it not have a word vector)? ~~bool~~                                                                                                                                                                                        |
 | `is_stop`                                    | Is the token part of a "stop list"? ~~bool~~                                                                                                                                                                                                                          |
 | `pos`                                        | Coarse-grained part-of-speech from the [Universal POS tag set](https://universaldependencies.org/docs/u/pos/). ~~int~~                                                                                                                                                |
 | `pos_`                                       | Coarse-grained part-of-speech from the [Universal POS tag set](https://universaldependencies.org/docs/u/pos/). ~~str~~                                                                                                                                                |

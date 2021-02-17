@@ -1,5 +1,5 @@
 from itertools import islice
-from typing import Iterable, Tuple, Optional, Dict, List, Callable, Iterator, Any
+from typing import Iterable, Tuple, Optional, Dict, List, Callable, Any
 from thinc.api import get_array_module, Model, Optimizer, set_dropout_rate, Config
 from thinc.types import Floats2d
 import numpy
@@ -9,17 +9,16 @@ from ..language import Language
 from ..training import Example, validate_examples, validate_get_examples
 from ..errors import Errors
 from ..scorer import Scorer
-from .. import util
 from ..tokens import Doc
 from ..vocab import Vocab
 
 
-default_model_config = """
+single_label_default_config = """
 [model]
 @architectures = "spacy.TextCatEnsemble.v2"
 
 [model.tok2vec]
-@architectures = "spacy.Tok2Vec.v1"
+@architectures = "spacy.Tok2Vec.v2"
 
 [model.tok2vec.embed]
 @architectures = "spacy.MultiHashEmbed.v1"
@@ -29,7 +28,7 @@ attrs = ["ORTH", "LOWER", "PREFIX", "SUFFIX", "SHAPE", "ID"]
 include_static_vectors = false
 
 [model.tok2vec.encode]
-@architectures = "spacy.MaxoutWindowEncoder.v1"
+@architectures = "spacy.MaxoutWindowEncoder.v2"
 width = ${model.tok2vec.embed.width}
 window_size = 1
 maxout_pieces = 3
@@ -37,24 +36,24 @@ depth = 2
 
 [model.linear_model]
 @architectures = "spacy.TextCatBOW.v1"
-exclusive_classes = false
+exclusive_classes = true
 ngram_size = 1
 no_output_layer = false
 """
-DEFAULT_TEXTCAT_MODEL = Config().from_str(default_model_config)["model"]
+DEFAULT_SINGLE_TEXTCAT_MODEL = Config().from_str(single_label_default_config)["model"]
 
-bow_model_config = """
+single_label_bow_config = """
 [model]
 @architectures = "spacy.TextCatBOW.v1"
-exclusive_classes = false
+exclusive_classes = true
 ngram_size = 1
 no_output_layer = false
 """
 
-cnn_model_config = """
+single_label_cnn_config = """
 [model]
 @architectures = "spacy.TextCatCNN.v1"
-exclusive_classes = false
+exclusive_classes = true
 
 [model.tok2vec]
 @architectures = "spacy.HashEmbedCNN.v1"
@@ -71,7 +70,7 @@ subword_features = true
 @Language.factory(
     "textcat",
     assigns=["doc.cats"],
-    default_config={"threshold": 0.5, "model": DEFAULT_TEXTCAT_MODEL},
+    default_config={"threshold": 0.5, "model": DEFAULT_SINGLE_TEXTCAT_MODEL},
     default_score_weights={
         "cats_score": 1.0,
         "cats_score_desc": None,
@@ -103,15 +102,15 @@ def make_textcat(
 
 
 class TextCategorizer(TrainablePipe):
-    """Pipeline component for text classification.
+    """Pipeline component for single-label text classification.
 
-    DOCS: https://nightly.spacy.io/api/textcategorizer
+    DOCS: https://spacy.io/api/textcategorizer
     """
 
     def __init__(
         self, vocab: Vocab, model: Model, name: str = "textcat", *, threshold: float
     ) -> None:
-        """Initialize a text categorizer.
+        """Initialize a text categorizer for single-label classification.
 
         vocab (Vocab): The shared vocabulary.
         model (thinc.api.Model): The Thinc Model powering the pipeline component.
@@ -119,7 +118,7 @@ class TextCategorizer(TrainablePipe):
             losses during training.
         threshold (float): Cutoff to consider a prediction "positive".
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#init
+        DOCS: https://spacy.io/api/textcategorizer#init
         """
         self.vocab = vocab
         self.model = model
@@ -132,30 +131,17 @@ class TextCategorizer(TrainablePipe):
     def labels(self) -> Tuple[str]:
         """RETURNS (Tuple[str]): The labels currently added to the component.
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#labels
+        DOCS: https://spacy.io/api/textcategorizer#labels
         """
         return tuple(self.cfg["labels"])
 
     @property
     def label_data(self) -> List[str]:
-        """RETURNS (List[str]): Information about the component's labels."""
-        return self.labels
+        """RETURNS (List[str]): Information about the component's labels.
 
-    def pipe(self, stream: Iterable[Doc], *, batch_size: int = 128) -> Iterator[Doc]:
-        """Apply the pipe to a stream of documents. This usually happens under
-        the hood when the nlp object is called on a text and all components are
-        applied to the Doc.
-
-        stream (Iterable[Doc]): A stream of documents.
-        batch_size (int): The number of documents to buffer.
-        YIELDS (Doc): Processed documents in order.
-
-        DOCS: https://nightly.spacy.io/api/textcategorizer#pipe
+        DOCS: https://spacy.io/api/textcategorizer#label_data
         """
-        for docs in util.minibatch(stream, size=batch_size):
-            scores = self.predict(docs)
-            self.set_annotations(docs, scores)
-            yield from docs
+        return self.labels
 
     def predict(self, docs: Iterable[Doc]):
         """Apply the pipeline's model to a batch of docs, without modifying them.
@@ -163,7 +149,7 @@ class TextCategorizer(TrainablePipe):
         docs (Iterable[Doc]): The documents to predict.
         RETURNS: The models prediction for each document.
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#predict
+        DOCS: https://spacy.io/api/textcategorizer#predict
         """
         if not any(len(doc) for doc in docs):
             # Handle cases where there are no tokens in any docs.
@@ -176,12 +162,12 @@ class TextCategorizer(TrainablePipe):
         return scores
 
     def set_annotations(self, docs: Iterable[Doc], scores) -> None:
-        """Modify a batch of [`Doc`](/api/doc) objects, using pre-computed scores.
+        """Modify a batch of Doc objects, using pre-computed scores.
 
         docs (Iterable[Doc]): The documents to modify.
         scores: The scores to set, produced by TextCategorizer.predict.
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#set_annotations
+        DOCS: https://spacy.io/api/textcategorizer#set_annotations
         """
         for i, doc in enumerate(docs):
             for j, label in enumerate(self.labels):
@@ -192,7 +178,6 @@ class TextCategorizer(TrainablePipe):
         examples: Iterable[Example],
         *,
         drop: float = 0.0,
-        set_annotations: bool = False,
         sgd: Optional[Optimizer] = None,
         losses: Optional[Dict[str, float]] = None,
     ) -> Dict[str, float]:
@@ -201,19 +186,18 @@ class TextCategorizer(TrainablePipe):
 
         examples (Iterable[Example]): A batch of Example objects.
         drop (float): The dropout rate.
-        set_annotations (bool): Whether or not to update the Example objects
-            with the predictions.
         sgd (thinc.api.Optimizer): The optimizer.
         losses (Dict[str, float]): Optional record of the loss during training.
             Updated using the component name as the key.
         RETURNS (Dict[str, float]): The updated losses dictionary.
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#update
+        DOCS: https://spacy.io/api/textcategorizer#update
         """
         if losses is None:
             losses = {}
         losses.setdefault(self.name, 0.0)
         validate_examples(examples, "TextCategorizer.update")
+        self._validate_categories(examples)
         if not any(len(eg.predicted) if eg.predicted else 0 for eg in examples):
             # Handle cases where there are no tokens in any docs.
             return losses
@@ -224,9 +208,6 @@ class TextCategorizer(TrainablePipe):
         if sgd is not None:
             self.finish_update(sgd)
         losses[self.name] += loss
-        if set_annotations:
-            docs = [eg.predicted for eg in examples]
-            self.set_annotations(docs, scores=scores)
         return losses
 
     def rehearse(
@@ -249,13 +230,14 @@ class TextCategorizer(TrainablePipe):
             Updated using the component name as the key.
         RETURNS (Dict[str, float]): The updated losses dictionary.
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#rehearse
+        DOCS: https://spacy.io/api/textcategorizer#rehearse
         """
         if losses is not None:
             losses.setdefault(self.name, 0.0)
         if self._rehearsal_model is None:
             return losses
         validate_examples(examples, "TextCategorizer.rehearse")
+        self._validate_categories(examples)
         docs = [eg.predicted for eg in examples]
         if not any(len(doc) for doc in docs):
             # Handle cases where there are no tokens in any docs.
@@ -293,9 +275,10 @@ class TextCategorizer(TrainablePipe):
         scores: Scores representing the model's predictions.
         RETURNS (Tuple[float, float]): The loss and the gradient.
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#get_loss
+        DOCS: https://spacy.io/api/textcategorizer#get_loss
         """
         validate_examples(examples, "TextCategorizer.get_loss")
+        self._validate_categories(examples)
         truths, not_missing = self._examples_to_truth(examples)
         not_missing = self.model.ops.asarray(not_missing)
         d_scores = (scores - truths) / scores.shape[0]
@@ -309,7 +292,7 @@ class TextCategorizer(TrainablePipe):
         label (str): The label to add.
         RETURNS (int): 0 if label is already present, otherwise 1.
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#add_label
+        DOCS: https://spacy.io/api/textcategorizer#add_label
         """
         if not isinstance(label, str):
             raise ValueError(Errors.E187)
@@ -325,9 +308,9 @@ class TextCategorizer(TrainablePipe):
         get_examples: Callable[[], Iterable[Example]],
         *,
         nlp: Optional[Language] = None,
-        labels: Optional[Dict] = None,
+        labels: Optional[Iterable[str]] = None,
         positive_label: Optional[str] = None,
-    ):
+    ) -> None:
         """Initialize the pipe for training, using a representative set
         of data examples.
 
@@ -338,9 +321,10 @@ class TextCategorizer(TrainablePipe):
             `init labels` command. If no labels are provided, the get_examples
             callback is used to extract the labels from the data.
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#initialize
+        DOCS: https://spacy.io/api/textcategorizer#initialize
         """
         validate_get_examples(get_examples, "TextCategorizer.initialize")
+        self._validate_categories(get_examples())
         if labels is None:
             for example in get_examples():
                 for cat in example.y.cats:
@@ -370,15 +354,22 @@ class TextCategorizer(TrainablePipe):
         examples (Iterable[Example]): The examples to score.
         RETURNS (Dict[str, Any]): The scores, produced by Scorer.score_cats.
 
-        DOCS: https://nightly.spacy.io/api/textcategorizer#score
+        DOCS: https://spacy.io/api/textcategorizer#score
         """
         validate_examples(examples, "TextCategorizer.score")
+        self._validate_categories(examples)
         return Scorer.score_cats(
             examples,
             "cats",
             labels=self.labels,
-            multi_label=self.model.attrs["multi_label"],
+            multi_label=False,
             positive_label=self.cfg["positive_label"],
             threshold=self.cfg["threshold"],
             **kwargs,
         )
+
+    def _validate_categories(self, examples: List[Example]):
+        """Check whether the provided examples all have single-label cats annotations."""
+        for ex in examples:
+            if list(ex.reference.cats.values()).count(1.0) > 1:
+                raise ValueError(Errors.E895.format(value=ex.reference.cats))
